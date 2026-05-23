@@ -1,6 +1,6 @@
 # Investment Agent
 
-Personal AI-powered portfolio monitor for a Fidelity account (~$108K across two accounts). Runs locally — no cloud, no subscription fees beyond the ~$4–5/month in API costs.
+Personal AI-powered portfolio monitor for a Fidelity account (~$108K across two accounts). 
 
 ---
 
