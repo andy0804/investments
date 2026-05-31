@@ -235,6 +235,49 @@ async def _job_sotd_close():
     await _job_sotd_refresh_with_label("Close", "sotd_close")
 
 
+async def job_options_revalue():
+    if not _is_market_hours():
+        return
+    import aiosqlite
+    from app.config import DB_PATH
+    from app.analysis.options_simulator import revalue_all_positions
+    from app.analysis.aria_agent import check_aria_exits
+    async with aiosqlite.connect(DB_PATH) as db:
+        result = await revalue_all_positions(db)
+        aria_result = await check_aria_exits(db)
+    if result["updated_legs"] > 0:
+        logger.info("job_options_revalue: %d legs updated | ARIA: %d exits, %d held",
+                    result["updated_legs"], aria_result["exited"], aria_result["held"])
+
+
+async def job_options_scan():
+    """Run daily blue-chip options scanner at market open."""
+    import aiosqlite
+    from app.config import DB_PATH
+    from app.analysis.options_scanner import run_options_scan
+    logger.info("job_options_scan: starting daily blue-chip scan")
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            setups = await run_options_scan(db, force=False)
+        logger.info("job_options_scan: %d setups ready", len(setups))
+        if setups:
+            top = setups[0]
+            try:
+                from app.notifications.telegram_bot import send_message
+                lines = [f"🔭 *Options Scanner — {len(setups)} setups today*\n"]
+                for s in setups[:4]:
+                    dir_emoji = "📈" if s["direction"] == "BULLISH" else "📉"
+                    lines.append(
+                        f"{dir_emoji} *{s['ticker']}* — {s['strategy_label']} "
+                        f"| IV: {s['iv_regime']} | Score: {s['conviction_score']}"
+                    )
+                await send_message("\n".join(lines), force=False)
+            except Exception as e:
+                logger.warning("job_options_scan: telegram notify failed: %s", e)
+    except Exception as e:
+        logger.error("job_options_scan failed: %s", e)
+
+
 def create_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=ET)
 
@@ -314,6 +357,14 @@ def create_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(job_virtual_evaluation, CronTrigger(hour=16, minute=15, day_of_week="mon-fri", timezone=ET),
                       id="virtual_evaluation", replace_existing=True)
 
+    # Options revaluation — every 15 min during market hours
+    scheduler.add_job(job_options_revalue, IntervalTrigger(minutes=15), id="options_revalue",
+                      replace_existing=True, misfire_grace_time=120)
+
+    # Options Scanner — once daily at 9:40 AM ET (market open + 10 min for liquidity to settle)
+    scheduler.add_job(job_options_scan, CronTrigger(hour=9, minute=40, day_of_week="mon-fri", timezone=ET),
+                      id="options_scan", replace_existing=True)
+
     return scheduler
 
 
@@ -330,10 +381,33 @@ async def _job_resolve_signals():
 
 async def _job_compute_outcomes():
     from app.performance.signal_event_tracker import compute_pending_outcomes
+    from app.performance.attribution import auto_generate_proposals, apply_correction_proposal, get_performance_series
     from app.scheduler.manager import update_last_run
     count = await compute_pending_outcomes()
     await update_last_run("outcome_computation")
     logger.info("outcome_computation: evaluated %d events", count)
+
+    # Auto-generate correction proposals whenever new outcomes arrive
+    try:
+        proposals = await auto_generate_proposals()
+        if proposals:
+            logger.info("auto_generate_proposals: created %d new proposal(s)", len(proposals))
+
+        # Auto-apply if rolling win rate is critically low (< 35%) — no human approval needed
+        series = await get_performance_series()
+        rolling = series.get("summary", {}).get("rolling_8pick_win_rate")
+        if rolling is not None and rolling < 0.35:
+            from app.performance.attribution import get_correction_proposals
+            pending = await get_correction_proposals("pending")
+            for p in pending:
+                result = await apply_correction_proposal(p["id"])
+                logger.warning(
+                    "AUTO-APPLIED correction proposal %d (%s): rolling win rate %.0f%% — %s",
+                    p["id"], p.get("trigger_reason"), rolling * 100,
+                    result.get("changes_applied"),
+                )
+    except Exception as exc:
+        logger.warning("correction-proposal hook failed: %s", exc)
 
 
 async def job_top_performers():
@@ -364,9 +438,11 @@ async def job_virtual_entry():
         logger.info("job_virtual_entry: no SOTD pick today — skip")
         return
     sig   = json.loads(pick["signal_json"] or "{}")
-    score = sig.get("confidence_score") or sig.get("score")
-    price = (sig.get("metrics") or sig.get("technicals") or {}).get("price")
-    regime = pick["regime"] or "BULL"
+    # Score and price are nested inside stock_of_the_day in the current SOTD format
+    sotd  = sig.get("stock_of_the_day") or sig
+    score = sotd.get("confidence_score") or sotd.get("score") or sig.get("confidence_score") or sig.get("score")
+    price = (sotd.get("metrics") or sotd.get("technicals") or sig.get("metrics") or sig.get("technicals") or {}).get("price")
+    regime = pick["regime"] or sig.get("market_context", {}).get("regime") or "BULL"
     if not score or not price:
         logger.info("job_virtual_entry: missing score/price in SOTD pick — skip")
         return

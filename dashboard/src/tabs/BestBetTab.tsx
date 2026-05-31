@@ -3,7 +3,10 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
-import { getStrategyComparison, runStrategyPicks, computeStrategyOutcomes, getMarketQuotes } from '../api'
+import {
+  getStrategyComparison, runStrategyPicks, computeStrategyOutcomes, getMarketQuotes,
+  getCorrectionProposals, generateProposals, approveProposal, rejectProposal,
+} from '../api'
 
 interface LiveQuote { price: number | null; change_pct: number | null; ytd_pct: number | null }
 
@@ -381,6 +384,192 @@ function StrategyCard({ name, strategy, rank, isLeader, quote }: {
   )
 }
 
+// ── Correction Proposals Panel ────────────────────────────────────────────────
+
+const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }> = {
+  pending:  { bg: '#fffbeb', color: '#92400e', border: '#fcd34d' },
+  approved: { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
+  rejected: { bg: '#fef2f2', color: '#991b1b', border: '#fca5a5' },
+}
+
+function CorrectionProposalsPanel({ overallWinRate, onChanged }: { overallWinRate: number | null; onChanged?: () => void }) {
+  const [proposals,   setProposals]   = useState<any[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [generating,  setGenerating]  = useState(false)
+  const [busyId,      setBusyId]      = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [msg,         setMsg]         = useState('')
+
+  const load = () => {
+    setLoading(true)
+    getCorrectionProposals(statusFilter)
+      .then(r => { setProposals(r.data.proposals ?? []); onChanged?.() })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [statusFilter])
+
+  async function handleGenerate() {
+    setGenerating(true); setMsg('')
+    try {
+      const r = await generateProposals()
+      const count = r.data.proposals_created ?? 0
+      setMsg(count > 0 ? `Generated ${count} new proposal(s).` : 'No new proposals — not enough data or no failing patterns detected yet.')
+      load()
+    } catch { setMsg('Failed to generate proposals.') }
+    setGenerating(false)
+  }
+
+  async function handleApprove(id: number) {
+    setBusyId(id)
+    try { await approveProposal(id); load() } catch { /* ignore */ }
+    setBusyId(null)
+    onChanged?.()
+  }
+
+  async function handleReject(id: number) {
+    const reason = window.prompt('Reason for rejection (optional):') ?? ''
+    setBusyId(id)
+    try { await rejectProposal(id, reason); load() } catch { /* ignore */ }
+    setBusyId(null)
+    onChanged?.()
+  }
+
+  const isLow = overallWinRate != null && overallWinRate < 0.40
+
+  return (
+    <div>
+      {/* Health banner */}
+      {isLow && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 16px', marginBottom: 14, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>⚠️</span>
+          <div>
+            <div style={{ fontWeight: 700, color: '#991b1b', fontSize: '0.82rem', marginBottom: 4 }}>
+              Win rate below 40% threshold — self-correction triggered
+            </div>
+            <div style={{ fontSize: '0.74rem', color: '#7f1d1d', lineHeight: 1.6 }}>
+              Overall win rate is {overallWinRate != null ? Math.round(overallWinRate * 100) : '?'}%.
+              The system will auto-generate proposals to adjust entry thresholds and regime filters.
+              If the rolling 8-pick win rate drops below 35%, proposals are auto-applied without requiring approval.
+              Review the proposals below and approve or reject them.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {(['all', 'pending', 'approved', 'rejected'] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} style={{
+              padding: '4px 12px', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700,
+              cursor: 'pointer', border: '1px solid var(--border)',
+              background: statusFilter === s ? '#1e293b' : 'var(--panel-inset)',
+              color: statusFilter === s ? '#fff' : 'var(--text-dim)',
+              borderRadius: s === 'all' ? '4px 0 0 4px' : s === 'rejected' ? '0 4px 4px 0' : '0',
+              marginLeft: s === 'all' ? 0 : -1,
+            }}>
+              {s.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <button className="btn sm primary" onClick={handleGenerate} disabled={generating}>
+          {generating ? '…' : '🤖 Generate Proposals'}
+        </button>
+        <button className="btn sm" onClick={load}>↻</button>
+        {msg && <span style={{ fontSize: '0.72rem', color: msg.includes('Generated') ? 'var(--green)' : 'var(--text-dim)', fontFamily: 'monospace' }}>{msg}</span>}
+      </div>
+
+      {loading ? (
+        <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>Loading…</div>
+      ) : proposals.length === 0 ? (
+        <div style={{ padding: '24px 0', color: 'var(--text-dim)', fontSize: '0.78rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
+          No correction proposals yet.<br />
+          Proposals are generated automatically after each outcome computation, or click <strong>Generate Proposals</strong> to run now.<br />
+          At least 8 evaluated picks are needed before the system can detect patterns.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {proposals.map(p => {
+            const ss = STATUS_STYLE[p.status] ?? STATUS_STYLE['pending']
+            const changes = p.proposed_changes ?? {}
+            const metrics = p.metric_snapshot ?? {}
+            const isPending = p.status === 'pending'
+            return (
+              <div key={p.id} style={{ background: 'var(--panel)', border: `1px solid ${ss.border}`, borderLeft: `4px solid ${ss.color}`, borderRadius: 8, padding: '14px 16px' }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, fontFamily: 'monospace', padding: '1px 8px', borderRadius: 12, background: ss.bg, color: ss.color, border: `1px solid ${ss.border}` }}>
+                        {p.status.toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                        #{p.id} · {p.trigger_reason?.replace(/_/g, ' ')} · {p.generated_at?.slice(0, 10)}
+                      </span>
+                      {p.status !== 'pending' && p.resolved_at && (
+                        <span style={{ fontSize: '0.62rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                          resolved {p.resolved_at.slice(0, 10)}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text)', lineHeight: 1.55 }}>{p.trigger_reason}</div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: 4, lineHeight: 1.5 }}>{p.metric_snapshot_json ?? p.trigger_reason}</div>
+                  </div>
+                  {isPending && (
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button className="btn sm primary" onClick={() => handleApprove(p.id)} disabled={busyId === p.id}>
+                        {busyId === p.id ? '…' : '✓ Apply'}
+                      </button>
+                      <button className="btn sm danger" onClick={() => handleReject(p.id)} disabled={busyId === p.id}>
+                        ✕ Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* What was detected */}
+                <div style={{ fontSize: '0.73rem', color: 'var(--text)', lineHeight: 1.6, marginBottom: 10, background: 'var(--panel-inset)', borderRadius: 5, padding: '8px 10px' }}>
+                  <strong>Detected:</strong> {p.trigger_reason?.replace(/_/g, ' ')}<br />
+                  {Object.entries(metrics).map(([k, v]) => (
+                    <span key={k} style={{ marginRight: 16, fontFamily: 'monospace', fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+                      {k.replace(/_/g, ' ')}: <strong style={{ color: 'var(--text)' }}>{String(v)}</strong>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Proposed changes */}
+                <div>
+                  <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.1em', marginBottom: 6 }}>PROPOSED CHANGES</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {Object.entries(changes).map(([key, val]: [string, any]) => (
+                      <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: '0.73rem', padding: '6px 10px', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 5 }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--cyan)', minWidth: 200, flexShrink: 0 }}>{key.replace(/_/g, '_')}</span>
+                        <span style={{ color: 'var(--red)', fontFamily: 'monospace' }}>{String(val.from)}</span>
+                        <span style={{ color: 'var(--text-dim)' }}>→</span>
+                        <span style={{ color: 'var(--green)', fontWeight: 700, fontFamily: 'monospace' }}>{String(val.to)}</span>
+                        {val.rationale && <span style={{ color: 'var(--text-dim)', marginLeft: 8, fontStyle: 'italic' }}>{val.rationale}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resolution note */}
+                {p.resolution && (
+                  <div style={{ marginTop: 8, fontSize: '0.68rem', color: 'var(--text-dim)', fontFamily: 'monospace', fontStyle: 'italic' }}>
+                    Resolution: {p.resolution}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main tab ──────────────────────────────────────────────────────────────────
 
 export default function BestBetTab() {
@@ -389,12 +578,18 @@ export default function BestBetTab() {
   const [running,    setRunning]    = useState(false)
   const [computing,  setComputing]  = useState(false)
   const [error,      setError]      = useState<string | null>(null)
-  const [activeTab,  setActiveTab]  = useState<'overview' | 'history'>('overview')
+  const [activeTab,  setActiveTab]  = useState<'overview' | 'history' | 'corrections'>('overview')
   const [histFilter, setHistFilter] = useState<string | null>(null)
   const [quotes,     setQuotes]     = useState<Record<string, LiveQuote>>({})
+  const [allProposals, setAllProposals] = useState<any[]>([])
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+
+  const loadProposals = () =>
+    getCorrectionProposals('all').then(r => setAllProposals(r.data.proposals ?? [])).catch(() => {})
 
   const load = () => {
     setLoading(true)
+    loadProposals()
     getStrategyComparison()
       .then(r => {
         setData(r.data)
@@ -480,21 +675,98 @@ export default function BestBetTab() {
 
       {/* ── Tab switcher ── */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '1px solid var(--border)' }}>
-        {(['overview', 'history'] as const).map(t => (
-          <button key={t} onClick={() => setActiveTab(t)} style={{
+        {([
+          ['overview',    'Overview'],
+          ['history',     `Pick History (${timeline.length})`],
+          ['corrections', '🔧 Corrections'],
+        ] as const).map(([t, label]) => (
+          <button key={t} onClick={() => setActiveTab(t as any)} style={{
             padding: '7px 18px', background: 'none', border: 'none', cursor: 'pointer',
-            borderBottom: `2px solid ${activeTab === t ? 'var(--cyan)' : 'transparent'}`,
-            color: activeTab === t ? 'var(--cyan)' : 'var(--text-dim)',
+            borderBottom: `2px solid ${activeTab === t ? (t === 'corrections' ? '#f59e0b' : 'var(--cyan)') : 'transparent'}`,
+            color: activeTab === t ? (t === 'corrections' ? '#f59e0b' : 'var(--cyan)') : 'var(--text-dim)',
             fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.06em',
             textTransform: 'uppercase', fontFamily: 'var(--mono)', marginBottom: -1,
           }}>
-            {t === 'overview' ? 'Overview' : `Pick History (${timeline.length})`}
+            {label}
           </button>
         ))}
       </div>
 
       {activeTab === 'overview' && (
         <>
+          {/* ── Self-correction health banner ── */}
+          {!bannerDismissed && (() => {
+            const avgWr = hasOutcomes
+              ? leaderboard.reduce((s, r) => s + (r.win_rate ?? 0), 0) / leaderboard.length
+              : null
+            if (avgWr == null || avgWr >= 0.40) return null
+
+            const approvedRecent = allProposals.filter(p => p.status === 'approved')
+            const pendingCount   = allProposals.filter(p => p.status === 'pending').length
+            const hasApproved    = approvedRecent.length > 0
+            const latestApproved = hasApproved
+              ? approvedRecent.sort((a, b) => (b.resolved_at ?? '').localeCompare(a.resolved_at ?? ''))[0]
+              : null
+
+            if (hasApproved) {
+              // Correction was applied — show a calmer monitoring state
+              const changes = latestApproved?.proposed_changes ?? {}
+              const changeLines = Object.entries(changes).map(([k, v]: [string, any]) =>
+                `${k.replace(/_/g, ' ')}: ${v.from} → ${v.to}`
+              )
+              return (
+                <div style={{ marginBottom: 14, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>✅</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, color: '#15803d', fontSize: '0.82rem', marginBottom: 4 }}>
+                      Correction applied — monitoring next picks
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#166534', lineHeight: 1.6 }}>
+                      Win rate is {Math.round(avgWr * 100)}% on historical picks (below 40%), but a correction was applied on {latestApproved?.resolved_at?.slice(0, 10) ?? '—'}.
+                      Historical numbers won't change — watch future picks to see if the adjustment helps.
+                      {changeLines.length > 0 && (
+                        <> Changed: <strong>{changeLines.join(' · ')}</strong>.</>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button className="btn sm" onClick={() => setActiveTab('corrections')}>
+                        View correction log →
+                      </button>
+                      <button className="btn sm" onClick={() => setBannerDismissed(true)}>
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // No corrections applied yet — show the alarm
+            return (
+              <div style={{ marginBottom: 14, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>⚠️</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: '#991b1b', fontSize: '0.82rem', marginBottom: 4 }}>
+                    All strategies underperforming — self-correction active
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#7f1d1d', lineHeight: 1.6 }}>
+                    Average win rate is {Math.round(avgWr * 100)}% (below 40% floor).
+                    {pendingCount > 0
+                      ? ` ${pendingCount} correction proposal${pendingCount > 1 ? 's are' : ' is'} waiting for your review.`
+                      : ' Click Generate Proposals to let the AI analyse the patterns and suggest fixes.'}
+                  </div>
+                  <button
+                    className="btn sm"
+                    style={{ marginTop: 8, borderColor: '#fca5a5', color: '#991b1b' }}
+                    onClick={() => setActiveTab('corrections')}
+                  >
+                    {pendingCount > 0 ? `Review ${pendingCount} proposal${pendingCount > 1 ? 's' : ''} →` : 'Open Corrections Tab →'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
           {/* ── Dynamic insights ── */}
           {insights.length > 0 && (
             <div style={{ marginBottom: 14, background: 'var(--panel-inset)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px' }}>
@@ -700,6 +972,16 @@ export default function BestBetTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Corrections tab ── */}
+      {activeTab === 'corrections' && (
+        <CorrectionProposalsPanel
+          overallWinRate={leaderboard.length > 0
+            ? leaderboard.reduce((s, r) => s + (r.win_rate ?? 0), 0) / leaderboard.length
+            : null}
+          onChanged={loadProposals}
+        />
       )}
 
       <div style={{ marginTop: 10, fontSize: '0.6rem', color: 'var(--text-dim)', fontFamily: 'var(--mono)', textAlign: 'right' }}>

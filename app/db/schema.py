@@ -498,6 +498,227 @@ CREATE TABLE IF NOT EXISTS analysis_memory_links (
     note_id INTEGER NOT NULL REFERENCES stock_intelligence_notes(id) ON DELETE CASCADE,
     relevance_score REAL
 );
+
+-- ── Options Trading Desk ──────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS options_account (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    cash REAL NOT NULL DEFAULT 10000.0,
+    initial_capital REAL NOT NULL DEFAULT 10000.0,
+    realized_pnl REAL NOT NULL DEFAULT 0.0,
+    total_commissions REAL NOT NULL DEFAULT 0.0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS options_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    strategy_label TEXT NOT NULL DEFAULT 'Single Leg',
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    open_date TEXT NOT NULL,
+    close_date TEXT,
+    total_cost REAL NOT NULL DEFAULT 0.0,
+    total_proceeds REAL DEFAULT 0.0,
+    realized_pnl REAL,
+    unrealized_pnl REAL,
+    last_revalued_at TEXT,
+    trade_notes_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS options_legs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER NOT NULL REFERENCES options_positions(id) ON DELETE CASCADE,
+    ticker TEXT NOT NULL,
+    expiry TEXT NOT NULL,
+    strike REAL NOT NULL,
+    option_type TEXT NOT NULL,
+    action TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    fill_price REAL NOT NULL,
+    commission REAL NOT NULL DEFAULT 0.0,
+    iv_at_entry REAL,
+    delta_at_entry REAL,
+    gamma_at_entry REAL,
+    theta_at_entry REAL,
+    vega_at_entry REAL,
+    rho_at_entry REAL,
+    underlying_at_entry REAL,
+    current_price REAL,
+    current_delta REAL,
+    current_gamma REAL,
+    current_theta REAL,
+    current_vega REAL,
+    current_iv REAL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    close_price REAL,
+    closed_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS options_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER NOT NULL REFERENCES options_positions(id),
+    leg_id INTEGER REFERENCES options_legs(id),
+    tx_type TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    expiry TEXT NOT NULL,
+    strike REAL NOT NULL,
+    option_type TEXT NOT NULL,
+    action TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    fill_price REAL NOT NULL,
+    premium_total REAL NOT NULL,
+    commission REAL NOT NULL DEFAULT 0.0,
+    net_cash_impact REAL NOT NULL,
+    underlying_price REAL,
+    iv_at_fill REAL,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS options_greeks_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    leg_id INTEGER NOT NULL REFERENCES options_legs(id) ON DELETE CASCADE,
+    snapshot_at TEXT NOT NULL,
+    underlying_price REAL,
+    option_price REAL,
+    delta REAL,
+    gamma REAL,
+    theta REAL,
+    vega REAL,
+    rho REAL,
+    iv REAL,
+    days_to_expiry REAL,
+    unrealized_pnl REAL
+);
+
+CREATE TABLE IF NOT EXISTS options_risk_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_at TEXT NOT NULL,
+    net_delta REAL,
+    net_gamma REAL,
+    net_theta REAL,
+    net_vega REAL,
+    net_rho REAL,
+    total_unrealized_pnl REAL,
+    total_realized_pnl REAL,
+    open_position_count INTEGER,
+    cash REAL,
+    net_liq REAL
+);
+
+CREATE TABLE IF NOT EXISTS options_trade_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER REFERENCES options_positions(id) ON DELETE CASCADE,
+    thesis TEXT,
+    rationale TEXT,
+    confidence INTEGER,
+    expected_catalyst TEXT,
+    expected_timeline TEXT,
+    expected_outcome TEXT,
+    actual_outcome TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── ARIA AI Agent ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS aria_account (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    cash REAL NOT NULL DEFAULT 10000.0,
+    initial_capital REAL NOT NULL DEFAULT 10000.0,
+    realized_pnl REAL NOT NULL DEFAULT 0.0,
+    total_commissions REAL NOT NULL DEFAULT 0.0,
+    trade_count INTEGER NOT NULL DEFAULT 0,
+    win_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS aria_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_position_id INTEGER REFERENCES options_positions(id),
+    ticker TEXT NOT NULL,
+    strategy_label TEXT NOT NULL DEFAULT 'Single Leg',
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    open_date TEXT NOT NULL,
+    close_date TEXT,
+    expiry TEXT NOT NULL,
+    strike REAL NOT NULL,
+    option_type TEXT NOT NULL,
+    action TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    fill_price REAL NOT NULL,
+    commission REAL NOT NULL DEFAULT 0.0,
+    total_cost REAL NOT NULL DEFAULT 0.0,
+    current_price REAL,
+    unrealized_pnl REAL DEFAULT 0.0,
+    realized_pnl REAL,
+    close_price REAL,
+    entry_thesis TEXT,
+    divergence_note TEXT,
+    user_trade_summary TEXT,
+    confidence_score INTEGER DEFAULT 5,
+    exit_conditions_json TEXT,
+    exit_reasoning TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS aria_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER REFERENCES aria_positions(id),
+    user_position_id INTEGER,
+    ticker TEXT NOT NULL,
+    decision_type TEXT NOT NULL,
+    decision_at TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    user_trade_summary TEXT,
+    aria_action TEXT,
+    pnl_at_decision REAL,
+    confidence INTEGER DEFAULT 5,
+    model_used TEXT,
+    tokens_in INTEGER,
+    tokens_out INTEGER,
+    cost_usd REAL
+);
+
+CREATE TABLE IF NOT EXISTS live_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL DEFAULT 'BUY',
+    option_type TEXT NOT NULL,
+    strike REAL NOT NULL,
+    expiry TEXT NOT NULL,
+    fill_price REAL NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    strategy_label TEXT,
+    open_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    close_price REAL,
+    close_date TEXT,
+    commission REAL NOT NULL DEFAULT 0.65,
+    note TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS options_scanner_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    conviction_score INTEGER NOT NULL,
+    strategy_label TEXT NOT NULL,
+    iv_regime TEXT,
+    risk_reversal REAL,
+    adx REAL,
+    rsi REAL,
+    rec_expiry TEXT,
+    full_context_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(scan_date, ticker)
+);
 """
 
 CONFIG_DEFAULTS = [

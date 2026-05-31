@@ -1,13 +1,15 @@
 #!/bin/bash
 # Investment Agent — start.sh
-# Works for both first-time setup and day-to-day use.
+# Handles first-time setup and day-to-day restarts cleanly.
 # Usage: ./start.sh
 
-set -e
+set -euo pipefail
 PROJ="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 LOGS="$PROJ/logs"
+PLIST_LABEL="com.investmentagent"
+PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'
@@ -23,6 +25,18 @@ echo "║        Investment Agent  — start.sh      ║"
 echo "╚══════════════════════════════════════════╝"
 
 mkdir -p "$LOGS"
+
+# ── Helper: kill every process bound to a TCP port ────────────────────────────
+kill_port() {
+  local port=$1
+  local pids
+  pids=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    warn "Killing existing processes on port $port (PIDs: $pids)"
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+}
 
 # ── 1. Python ──────────────────────────────────────────────────────────────────
 hdr "Checking Python..."
@@ -59,7 +73,6 @@ source "$PROJ/venv/bin/activate"
 # ── 3. Python dependencies ─────────────────────────────────────────────────────
 hdr "Checking Python dependencies..."
 
-# Use a sentinel file to skip reinstall when requirements haven't changed
 SENTINEL="$PROJ/venv/.deps_installed"
 REQ="$PROJ/requirements.txt"
 
@@ -82,12 +95,10 @@ if [ ! -f "$PROJ/.env" ]; then
   echo ""
   echo -e "  ${YLW}ACTION REQUIRED:${NC}"
   echo "  Open .env and fill in your API keys before the agent can run."
-  echo "  See README.md for instructions on getting each key."
   echo ""
   read -rp "  Press Enter once you've added your keys, or Ctrl+C to exit: "
 fi
 
-# Check that the mandatory key is not still a placeholder
 if grep -q "your_anthropic_api_key_here" "$PROJ/.env" 2>/dev/null; then
   err "ANTHROPIC_API_KEY is still a placeholder in .env."
   err "Open .env and add your real Anthropic API key, then re-run."
@@ -104,8 +115,7 @@ if ! command -v node &>/dev/null; then
   exit 1
 fi
 
-NODE_VER=$(node --version)
-ok "Node.js $NODE_VER"
+ok "Node.js $(node --version)"
 
 # ── 6. npm dependencies ────────────────────────────────────────────────────────
 hdr "Checking frontend dependencies..."
@@ -121,6 +131,7 @@ fi
 # ── 7. Database init ───────────────────────────────────────────────────────────
 hdr "Checking database..."
 
+cd "$PROJ"
 python3 - <<'PYEOF'
 import asyncio, sys, os
 sys.path.insert(0, os.getcwd())
@@ -129,61 +140,62 @@ asyncio.run(init_db())
 print("  \033[0;32m✓\033[0m Database ready")
 PYEOF
 
-# ── 8. Backend ────────────────────────────────────────────────────────────────
-PLIST_LABEL="com.investmentagent"
-PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
+# ── 8. Stop any launchd daemon (prevents port conflicts) ──────────────────────
+hdr "Clearing previous processes..."
+
+# Unload launchd plist if it is loaded — prevents it from fighting with our process.
+# We always manage the process directly; launchd auto-restart causes duplicate binds.
+if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
+  warn "Disabling launchd daemon ($PLIST_LABEL) to prevent port conflicts..."
+  launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null \
+    || launchctl unload "$PLIST_PATH" 2>/dev/null \
+    || true
+  sleep 1
+  ok "launchd daemon unloaded"
+fi
+
+# Kill everything on both ports — launchd or manual leftovers
+kill_port "$BACKEND_PORT"
+kill_port "$FRONTEND_PORT"
+
+# Remove stale PID files
+rm -f "$LOGS/backend.pid" "$LOGS/frontend.pid"
+
+# Rotate backend log if it's over 10 MB
+if [ -f "$LOGS/backend.log" ] && [ "$(wc -c < "$LOGS/backend.log")" -gt 10485760 ]; then
+  mv "$LOGS/backend.log" "$LOGS/backend.log.old"
+  warn "Rotated oversized backend.log to backend.log.old"
+fi
 
 # ── 9. Start backend ───────────────────────────────────────────────────────────
 hdr "Starting backend (FastAPI)..."
 
-if launchctl list "$PLIST_LABEL" &>/dev/null; then
-  # launchd is managing it — kickstart forces a clean restart and picks up new code
-  warn "launchd daemon running — restarting via launchctl kickstart"
-  launchctl kickstart -k "gui/$(id -u)/$PLIST_LABEL" &>/dev/null || true
-elif [ -f "$PLIST_PATH" ]; then
-  warn "Loading launchd daemon from plist..."
-  launchctl load "$PLIST_PATH"
-else
-  # No launchd plist — manage the process directly
-  pid=$(lsof -ti tcp:"$BACKEND_PORT" 2>/dev/null || true)
-  if [ -n "$pid" ]; then
-    warn "Port $BACKEND_PORT in use (PID $pid) — stopping"
-    kill "$pid" 2>/dev/null || true
-    sleep 1
-  fi
-  cd "$PROJ"
-  nohup "$PROJ/venv/bin/uvicorn" app.main:app \
-    --host 127.0.0.1 \
-    --port "$BACKEND_PORT" \
-    --log-level warning \
-    > "$LOGS/backend.log" 2>&1 &
-  echo $! > "$LOGS/backend.pid"
-fi
+cd "$PROJ"
+nohup "$PROJ/venv/bin/uvicorn" app.main:app \
+  --host 127.0.0.1 \
+  --port "$BACKEND_PORT" \
+  --log-level warning \
+  >> "$LOGS/backend.log" 2>&1 &
+BACKEND_PID=$!
+echo "$BACKEND_PID" > "$LOGS/backend.pid"
 
-# Wait for backend to be healthy
+# Wait for backend health check
 echo -n "  Waiting for backend"
-for i in {1..20}; do
-  if curl -s "http://127.0.0.1:$BACKEND_PORT/health" &>/dev/null; then
+for i in {1..25}; do
+  if curl -sf "http://127.0.0.1:$BACKEND_PORT/health" &>/dev/null; then
     echo ""
-    ok "Backend is up"
+    ok "Backend is up  (PID $BACKEND_PID)"
     break
   fi
   echo -n "."
   sleep 1
 done
 
-if ! curl -s "http://127.0.0.1:$BACKEND_PORT/health" &>/dev/null; then
+if ! curl -sf "http://127.0.0.1:$BACKEND_PORT/health" &>/dev/null; then
   echo ""
-  err "Backend failed to start. Check logs/backend.log or launchd logs."
+  err "Backend failed to start. Check $LOGS/backend.log"
+  tail -20 "$LOGS/backend.log" 2>/dev/null || true
   exit 1
-fi
-
-# Free frontend port if stale
-local_pid=$(lsof -ti tcp:"$FRONTEND_PORT" 2>/dev/null || true)
-if [ -n "$local_pid" ]; then
-  warn "Port $FRONTEND_PORT in use (PID $local_pid) — stopping"
-  kill "$local_pid" 2>/dev/null || true
-  sleep 1
 fi
 
 # ── 10. Start frontend ─────────────────────────────────────────────────────────
@@ -191,14 +203,14 @@ hdr "Starting frontend (Vite)..."
 
 cd "$PROJ/dashboard"
 nohup npm run dev -- --host 127.0.0.1 \
-  > "$LOGS/frontend.log" 2>&1 &
+  >> "$LOGS/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > "$LOGS/frontend.pid"
 
-# Wait for Vite to be ready
+# Wait for Vite
 echo -n "  Waiting for frontend"
-for i in {1..15}; do
-  if curl -s "http://127.0.0.1:$FRONTEND_PORT" &>/dev/null; then
+for i in {1..20}; do
+  if curl -sf "http://127.0.0.1:$FRONTEND_PORT" &>/dev/null; then
     echo ""
     ok "Frontend is up  (PID $FRONTEND_PID)"
     break
@@ -207,9 +219,9 @@ for i in {1..15}; do
   sleep 1
 done
 
-if ! curl -s "http://127.0.0.1:$FRONTEND_PORT" &>/dev/null; then
+if ! curl -sf "http://127.0.0.1:$FRONTEND_PORT" &>/dev/null; then
   echo ""
-  warn "Frontend may still be starting — check logs/frontend.log if it doesn't open."
+  warn "Frontend may still be starting — check $LOGS/frontend.log if it doesn't open."
 fi
 
 cd "$PROJ"

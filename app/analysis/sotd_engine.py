@@ -232,7 +232,10 @@ def _compute_indicators(df: pd.DataFrame) -> dict:
     sma20 = SMAIndicator(close, window=20).sma_indicator()
     sma50 = SMAIndicator(close, window=min(50, len(df))).sma_indicator()
     bb    = BollingerBands(close, window=20, window_dev=2)
-    adx   = _scalar(ADXIndicator(df["High"], df["Low"], close, window=14).adx().iloc[-1])
+    try:
+        adx = _scalar(ADXIndicator(df["High"], df["Low"], close, window=14).adx().iloc[-1])
+    except (IndexError, Exception):
+        adx = 0.0
 
     p_now = _scalar(close.iloc[-1])
     p_3d  = _scalar(close.iloc[-4])  if len(df) >= 4  else p_now
@@ -376,9 +379,18 @@ async def _fetch_fundamental_batch(tickers: list[str]) -> dict[str, dict]:
             out: dict[str, dict] = {}
             with ThreadPoolExecutor(max_workers=min(12, len(syms))) as ex:
                 futures = {ex.submit(_one, s): s for s in syms}
-                for f in as_completed(futures):
-                    sym, data = f.result()
-                    out[sym] = data
+                try:
+                    for f in as_completed(futures, timeout=30):
+                        try:
+                            sym, data = f.result(timeout=20)
+                        except Exception:
+                            sym = futures[f]
+                            data = {}
+                        out[sym] = data
+                except TimeoutError:
+                    for f, sym in futures.items():
+                        if sym not in out:
+                            out[sym] = {}
             return out
 
         yf_data = await asyncio.to_thread(_batch, misses)
@@ -662,6 +674,12 @@ def _build_llm_input(scored: list[dict]) -> list[dict]:
 _pipeline_running = False
 
 
+def reset_pipeline_lock() -> None:
+    """Force-clear the pipeline running lock. Call from outer exception handlers."""
+    global _pipeline_running
+    _pipeline_running = False
+
+
 async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
     """
     Run the full V2 SOTD pipeline.
@@ -819,7 +837,11 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
             rejected.append({"ticker": t, "reason": "insufficient price history"})
             continue
 
-        ind = _compute_indicators(df)
+        try:
+            ind = _compute_indicators(df)
+        except Exception as e:
+            rejected.append({"ticker": t, "reason": f"indicator error: {e}"})
+            continue
         ok, reason = _apply_hard_filters(ind)
         if not ok:
             rejected.append({"ticker": t, "reason": reason})

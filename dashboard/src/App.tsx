@@ -13,6 +13,7 @@ import SOTDHistoryTab from './tabs/SOTDHistoryTab'
 import DailyDecisionLogTab from './tabs/DailyDecisionLogTab'
 import BestBetTab from './tabs/BestBetTab'
 import ResearchPage from './pages/ResearchPage'
+import OptionsDeskPage from './pages/OptionsDeskPage'
 import './App.css'
 
 // ── Home tabs ─────────────────────────────────────────────────────────────────
@@ -24,11 +25,12 @@ const HOME_TABS = [
 type HomeTab = typeof HOME_TABS[number]
 
 // ── Top-level pages (sidebar) ─────────────────────────────────────────────────
-type Page = 'home' | 'research'
+type Page = 'home' | 'research' | 'options'
 
 const SIDEBAR_ITEMS: { page: Page; label: string; icon: string }[] = [
   { page: 'home',     label: 'Home',     icon: '⌂' },
   { page: 'research', label: 'Research', icon: '🔬' },
+  { page: 'options',  label: 'Desk',     icon: '⚡' },
 ]
 
 export default function App() {
@@ -76,10 +78,13 @@ export default function App() {
         <header className="header">
           <div className="header-left">
             <span className="logo">
-              {page === 'research' ? '▲ Research' : '▲ Investment Agent'}
+              {page === 'research' ? '▲ Research' : page === 'options' ? '▲ Options Desk' : '▲ Investment Agent'}
             </span>
             {page === 'home' && macro?.regime && (
               <span className={`hbadge ${regime}`}>{macro.regime} REGIME</span>
+            )}
+            {page === 'options' && (
+              <span className="hbadge neutral">Options Desk — $10k Simulation</span>
             )}
             {page === 'home' && vix != null && (
               <span className={`hbadge ${vix < 20 ? 'bull' : vix < 30 ? 'chop' : 'bear'}`}>
@@ -134,6 +139,13 @@ export default function App() {
         {page === 'research' && (
           <main className="content research-content">
             <ResearchPage />
+          </main>
+        )}
+
+        {/* ── Options Desk ── */}
+        {page === 'options' && (
+          <main className="content" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <OptionsDeskPage />
           </main>
         )}
       </div>

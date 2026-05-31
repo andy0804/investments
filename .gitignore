@@ -88,3 +88,11 @@ app/connectors/__pycache__/fmp.cpython-313.pyc
 app/connectors/__pycache__/finnhub.cpython-313.pyc
 app/connectors/__pycache__/edgar.cpython-313.pyc
 app/connectors/__pycache__/__init__.cpython-313.pyc
+app/analysis/__pycache__/options_simulator.cpython-313.pyc
+app/analysis/__pycache__/options_scanner.cpython-313.pyc
+app/analysis/__pycache__/options_engine.cpython-313.pyc
+app/analysis/__pycache__/aria_agent.cpython-313.pyc
+app/routers/__pycache__/__init__.cpython-313.pyc
+app/routers/__pycache__/live_portfolio.cpython-313.pyc
+app/routers/__pycache__/options_scanner.cpython-313.pyc
+app/routers/__pycache__/options.cpython-313.pyc

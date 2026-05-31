@@ -1,42 +1,46 @@
 #!/bin/bash
 # Investment Agent — stop.sh
-# Stops both the backend and frontend started by start.sh
+# Cleanly kills backend + frontend and unloads any launchd daemon.
+# Usage: ./stop.sh
 
 PROJ="$(cd "$(dirname "$0")" && pwd)"
+BACKEND_PORT=8000
+FRONTEND_PORT=5173
 LOGS="$PROJ/logs"
+PLIST_LABEL="com.investmentagent"
+PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 
-GRN='\033[0;32m'; YLW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; NC='\033[0m'
 ok()   { echo -e "  ${GRN}✓${NC} $*"; }
-skip() { echo -e "  ${YLW}-${NC} $*"; }
+warn() { echo -e "  ${YLW}!${NC} $*"; }
 
 echo ""
-echo "▶ Stopping Investment Agent..."
+echo "  Stopping Investment Agent..."
+echo ""
 
-stop_pid_file() {
-  local name=$1
-  local pidfile="$LOGS/$2.pid"
-  if [ -f "$pidfile" ]; then
-    local pid
-    pid=$(cat "$pidfile")
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid"
-      ok "$name stopped (PID $pid)"
-    else
-      skip "$name was not running"
-    fi
-    rm -f "$pidfile"
+# 1. Unload launchd if it's managing the backend
+if launchctl list "$PLIST_LABEL" &>/dev/null 2>&1; then
+  warn "Unloading launchd daemon ($PLIST_LABEL)..."
+  launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null \
+    || launchctl unload "$PLIST_PATH" 2>/dev/null \
+    || true
+  ok "launchd daemon unloaded"
+fi
+
+# 2. Kill everything on both ports (catches all processes, not just PID file)
+for port in $BACKEND_PORT $FRONTEND_PORT; do
+  pids=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+    ok "Killed processes on port $port"
   else
-    # Fallback: pkill by process pattern
-    if pkill -f "$3" 2>/dev/null; then
-      ok "$name stopped"
-    else
-      skip "$name was not running"
-    fi
+    echo -e "  (nothing on port $port)"
   fi
-}
+done
 
-stop_pid_file "Backend"  "backend"  "uvicorn app.main:app"
-stop_pid_file "Frontend" "frontend" "vite"
+# 3. Remove PID files
+rm -f "$LOGS/backend.pid" "$LOGS/frontend.pid"
 
-echo "  Done."
+echo ""
+echo -e "  ${GRN}All stopped.${NC}  Run ./start.sh to restart."
 echo ""

@@ -103,7 +103,7 @@ function OpenPositions({ positions }: { positions: any[] }) {
 }
 
 // ── Closed trades ─────────────────────────────────────────────────────────────
-function ClosedTrades() {
+function ClosedTrades({ initialCapital }: { initialCapital: number }) {
   const [rows, setRows] = useState<any[]>([])
   useEffect(() => {
     getVirtualClosed().then(r => setRows(r.data.positions ?? [])).catch(() => {})
@@ -112,31 +112,53 @@ function ClosedTrades() {
   if (!rows.length) return <div style={{ color: 'var(--text-dim)', fontSize: '0.78rem', fontFamily: 'var(--mono)' }}>No closed trades yet.</div>
 
   return (
-    <table>
-      <thead>
-        <tr><th>Ticker</th><th>Entry Date</th><th>Exit Date</th><th>Entry $</th><th>Exit $</th><th>Return</th><th>Hold</th><th>Reason</th></tr>
-      </thead>
-      <tbody>
-        {rows.map(p => {
-          const ret = p.exit_price && p.entry_price
-            ? round((p.exit_price / p.entry_price - 1) * 100, 2) : null
-          const days = p.exit_date && p.entry_date
-            ? Math.round((new Date(p.exit_date).getTime() - new Date(p.entry_date).getTime()) / 86400000) : null
-          return (
-            <tr key={p.id}>
-              <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-bright)' }}>{p.ticker}</td>
-              <td style={S.mono}>{p.entry_date}</td>
-              <td style={S.mono}>{p.exit_date ?? '—'}</td>
-              <td style={S.mono}>${p.entry_price?.toFixed(2)}</td>
-              <td style={S.mono}>{p.exit_price ? `$${p.exit_price.toFixed(2)}` : '—'}</td>
-              <td style={{ ...S.mono, color: color(ret), fontWeight: 700 }}>{pct(ret)}</td>
-              <td style={S.mono}>{days != null ? `${days}d` : '—'}</td>
-              <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.exit_reason ?? '—'}</td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
+    <>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Shares</th><th>Invested</th>
+            <th>Entry $</th><th>Exit $</th>
+            <th>P&amp;L $</th><th>Trade %</th><th>Port Impact</th>
+            <th>Hold</th><th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(p => {
+            const qty      = p.quantity ?? 0
+            const invested = qty * (p.entry_price ?? 0)
+            const pnlDollar = p.exit_price && p.entry_price
+              ? round(qty * (p.exit_price - p.entry_price), 2) : null
+            const tradePct  = p.exit_price && p.entry_price
+              ? round((p.exit_price / p.entry_price - 1) * 100, 2) : null
+            const portImpact = pnlDollar != null && initialCapital > 0
+              ? round((pnlDollar / initialCapital) * 100, 2) : null
+            const days = p.exit_date && p.entry_date
+              ? Math.round((new Date(p.exit_date).getTime() - new Date(p.entry_date).getTime()) / 86400000) : null
+            return (
+              <tr key={p.id}>
+                <td style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--text-bright)' }}>{p.ticker}</td>
+                <td style={S.mono}>{qty.toFixed(2)}</td>
+                <td style={S.mono}>${invested.toFixed(0)}</td>
+                <td style={S.mono}>${p.entry_price?.toFixed(2)}</td>
+                <td style={S.mono}>{p.exit_price ? `$${p.exit_price.toFixed(2)}` : '—'}</td>
+                <td style={{ ...S.mono, color: color(pnlDollar), fontWeight: 700 }}>
+                  {pnlDollar != null ? `${pnlDollar >= 0 ? '+' : ''}$${pnlDollar.toFixed(2)}` : '—'}
+                </td>
+                <td style={{ ...S.mono, color: color(tradePct), fontWeight: 700 }}>{pct(tradePct)}</td>
+                <td style={{ ...S.mono, color: color(portImpact), fontSize: '0.72rem' }} title="P&L as % of starting $10k">
+                  {portImpact != null ? `${portImpact >= 0 ? '+' : ''}${portImpact.toFixed(2)}%` : '—'}
+                </td>
+                <td style={S.mono}>{days != null ? `${days}d` : '—'}</td>
+                <td style={{ fontSize: '0.68rem', color: 'var(--text-dim)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.exit_reason ?? '—'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <div style={{ marginTop: 8, fontSize: '0.62rem', color: 'var(--text-dim)', fontFamily: 'var(--mono)', lineHeight: 1.6 }}>
+        <strong>Trade %</strong> = per-share return · <strong>Port Impact</strong> = how much that trade moved the $10k portfolio · A 40% trade return on a $2k position = +8% portfolio impact
+      </div>
+    </>
   )
 }
 
@@ -426,7 +448,7 @@ export default function VirtualPortfolioTab() {
       {/* Section 3: Closed trades */}
       <div style={S.panel}>
         <div style={S.hd}>Closed Trades</div>
-        <ClosedTrades />
+        <ClosedTrades initialCapital={s.initial_capital ?? 10000} />
       </div>
 
       {/* Section 4: Decision Intelligence Table */}

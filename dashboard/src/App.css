@@ -272,3 +272,166 @@ tr:hover td { background: var(--panel-hi); }
 .research-score-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; }
 .research-score-fill  { height: 100%; border-radius: 3px; transition: width 0.4s; }
 .research-score-val   { width: 30px; text-align: right; font-size: 0.7rem; font-family: var(--mono); font-weight: 700; }
+
+/* ── Options Desk ────────────────────────────────────────────────────── */
+.opts-desk { display: flex; flex-direction: column; height: calc(100vh - 50px); overflow: hidden; }
+
+.opts-account-bar {
+  display: flex; gap: 0; align-items: stretch;
+  background: #ffffff; border-bottom: 1px solid var(--border);
+  padding: 0 24px; min-height: 44px; flex-shrink: 0;
+}
+.opts-acct-stat {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 6px 18px 6px 0; border-right: 1px solid var(--border); margin-right: 18px;
+}
+.opts-acct-stat:last-child { border-right: none; }
+.opts-acct-label { font-size: 0.58rem; font-weight: 700; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; font-family: var(--mono); }
+.opts-acct-val   { font-size: 0.88rem; font-weight: 700; font-family: var(--mono); color: var(--text-bright); }
+
+.opts-shell {
+  display: grid;
+  grid-template-columns: 1fr 340px 280px;
+  gap: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.opts-left {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg);
+}
+.opts-center {
+  padding: 14px 14px;
+  overflow-y: auto; background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+.opts-right {
+  padding: 14px 12px;
+  overflow-y: auto; background: #ffffff;
+}
+
+.opts-chain-controls {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 10px 12px; background: #ffffff; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.opts-chain-meta {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  padding: 6px 12px; background: var(--panel-inset); border-bottom: 1px solid var(--border);
+  font-size: 0.75rem; flex-shrink: 0;
+}
+.opts-chain-wrap { flex: 1; overflow: auto; }
+
+.opts-chain-table {
+  width: 100%; border-collapse: collapse; font-size: 0.72rem;
+  font-family: var(--mono);
+}
+.opts-chain-table th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 5px 8px; font-size: 0.62rem;
+  background: var(--panel-inset); color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+}
+.opts-chain-table td {
+  padding: 4px 8px; border-bottom: 1px solid var(--border);
+  text-align: right; color: var(--text);
+}
+.opts-chain-table tr:hover td { background: var(--panel-hi); }
+.opts-chain-table .opts-itm { background: rgba(21,128,61,0.06); }
+.opts-atm-row td { border-top: 2px solid var(--cyan); border-bottom: 2px solid var(--cyan); }
+
+.opts-pos-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.opts-pos-header { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.opts-pos-ticker { font-size: 0.9rem; font-weight: 800; font-family: var(--mono); color: var(--cyan); }
+.opts-pos-details, .opts-pos-current {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 2px 10px; font-size: 0.7rem; color: var(--text-dim); margin-bottom: 6px;
+}
+.opts-pos-details strong, .opts-pos-current strong { color: var(--text-bright); }
+.opts-pos-pnl { display: flex; align-items: baseline; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); }
+.opts-pnl-big { font-size: 1.1rem; font-weight: 800; font-family: var(--mono); }
+.opts-pos-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+@media (max-width: 1200px) {
+  .opts-shell { grid-template-columns: 1fr 300px; }
+  .opts-right { display: none; }
+}
+@media (max-width: 800px) {
+  .opts-shell { grid-template-columns: 1fr; }
+  .opts-left { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+}
+
+/* ── Options Desk: page-level tabs ─────────────────────────────────────────── */
+.opts-page-tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+  background: #ffffff; flex-shrink: 0;
+}
+.opts-page-tab {
+  padding: 8px 20px; font-size: 0.75rem; font-weight: 700;
+  border: none; border-bottom: 3px solid transparent; background: none;
+  cursor: pointer; color: var(--text-dim); margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s; font-family: var(--mono);
+  letter-spacing: 0.04em;
+}
+.opts-page-tab:hover { color: var(--text); }
+.opts-page-tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.opts-page-tab.aria-tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+.opts-page-tab.aria-tab:hover { color: #d97706; }
+
+/* ── ARIA Panel ─────────────────────────────────────────────────────────────── */
+.aria-panel {
+  display: flex; flex-direction: column; flex: 1; overflow: hidden;
+}
+.aria-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 20px; background: #fffbeb;
+  border-bottom: 1px solid #fcd34d; flex-shrink: 0;
+}
+.aria-body {
+  display: grid; grid-template-columns: 1fr 360px;
+  flex: 1; overflow: hidden; gap: 0;
+}
+.aria-left {
+  padding: 16px 20px; overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+.aria-right {
+  padding: 16px; overflow-y: auto; background: var(--bg);
+  border-left: 1px solid var(--border);
+}
+
+/* ── ARIA Scoreboard ─────────────────────────────────────────────────────────── */
+.aria-scoreboard {
+  background: var(--panel); border: 1px solid #fcd34d;
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 4px;
+}
+.aria-score-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; flex-wrap: wrap; gap: 6px;
+}
+.aria-score-grid {
+  display: grid; grid-template-columns: 1fr 90px 90px;
+  gap: 2px 0; align-items: center;
+}
+
+/* ── ARIA Position Card ─────────────────────────────────────────────────────── */
+.aria-pos-card {
+  background: var(--panel); border: 1px solid #fcd34d;
+  border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+}
+
+@media (max-width: 1100px) {
+  .aria-body { grid-template-columns: 1fr; }
+  .aria-right { display: none; }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

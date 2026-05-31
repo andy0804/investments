@@ -26,7 +26,7 @@ from app.analysis.filter_presets import (
     update_preset, delete_preset,
 )
 from app.analysis.top_performers import get_top_performers
-from app.analysis.sotd_engine import run_sotd_pipeline
+from app.analysis.sotd_engine import run_sotd_pipeline, reset_pipeline_lock
 from app.analysis.portfolio_intelligence import generate_portfolio_intelligence
 from app.scheduler.manager import seed_schedules, list_schedules, toggle_schedule, delete_schedule, update_schedule
 from app.analysis.macro import get_macro_snapshot
@@ -38,6 +38,9 @@ from app.analysis.preemptive_engine import generate_foresight_report
 from app.performance.signal_tracker import get_signal_accuracy, resolve_old_signals
 from app.performance.roi_tracker import get_monthly_roi_report
 from app.performance.health_monitor import check_all_apis
+from app.routers.options import router as options_router
+from app.routers.live_portfolio import router as live_portfolio_router
+from app.routers.options_scanner import router as options_scanner_router
 
 import os as _os
 
@@ -83,6 +86,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(options_router)
+app.include_router(live_portfolio_router)
+app.include_router(options_scanner_router)
 
 
 @app.get("/health")
@@ -537,7 +543,11 @@ async def stock_of_day():
 @app.get("/analysis/sotd/full")
 async def sotd_full(force_refresh: bool = False):
     """Full V2 SOTD pipeline result with market context, all candidates, and score breakdowns."""
-    result = await run_sotd_pipeline(force_refresh=force_refresh)
+    try:
+        result = await run_sotd_pipeline(force_refresh=force_refresh)
+    except Exception:
+        reset_pipeline_lock()
+        raise
     return {"status": "ok", "data": result}
 
 
@@ -557,6 +567,7 @@ async def sotd_stream(force_refresh: bool = True):
             await queue.put({"step": "complete", "status": "done", "data": result})
         except Exception as e:
             logger.error("sotd_stream pipeline error: %s", e)
+            reset_pipeline_lock()
             await queue.put({"step": "error", "status": "error", "msg": str(e)})
 
     _asyncio.create_task(run())

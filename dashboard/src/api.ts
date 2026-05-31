@@ -142,3 +142,46 @@ export const getAnalysisHistory   = (ticker: string, limit = 10) =>
 export const getIntelNotes        = (ticker: string) => api.get(`/stock-analysis/notes/${ticker}`)
 export const deleteIntelNote      = (noteId: number) => api.delete(`/stock-analysis/notes/${noteId}`)
 export const getContradictions    = (ticker: string) => api.get(`/stock-analysis/contradictions/${ticker}`)
+
+// Options Desk
+export const getOptionsAccount    = () => api.get('/options-desk/account')
+export const resetOptionsAccount  = () => api.post('/options-desk/account/reset')
+export const getOptionExpirations = (ticker: string) => api.get(`/options-desk/chain/${ticker}/expirations`)
+export const getOptionChain       = (ticker: string, expiry: string) => api.get(`/options-desk/chain/${ticker}/${expiry}`)
+export const getUnderlying        = (ticker: string) => api.get(`/options-desk/underlying/${ticker}`)
+export const getOpenPositions     = () => api.get('/options-desk/positions')
+export const getClosedPositions   = () => api.get('/options-desk/positions/closed')
+export const openOptionsPosition  = (body: Record<string, any>) => api.post('/options-desk/positions/open', body)
+export const closeOptionsPosition = (positionId: number, note?: string) =>
+  api.post(`/options-desk/positions/${positionId}/close`, { note: note ?? '' })
+export const triggerRevalue       = () => api.post('/options-desk/revalue')
+export const scenarioFromLeg      = (body: Record<string, any>) => api.post('/options-desk/scenario/from-leg', body)
+export const scenarioLive         = (body: Record<string, any>) => api.post('/options-desk/scenario/live', body)
+export const getOptionsAICommentary = (positionId: number, question?: string) =>
+  api.post('/options-desk/ai-commentary', { position_id: positionId, question: question ?? '' })
+export const getOptionsRisk       = () => api.get('/options-desk/risk')
+export const openMultiLegPosition = (body: Record<string, any>) => api.post('/options-desk/positions/open-multi', body)
+export const getOptionsAlerts     = () => api.get('/options-desk/alerts')
+export const getOptionsPerformance  = (days = 30) => api.get(`/options-desk/performance?days=${days}`)
+export const getOptionsBenchmark    = (days = 30) => api.get(`/options-desk/benchmark?days=${days}`)
+export const getMarketStatus        = () => api.get('/options-desk/market-status')
+
+// Live Portfolio
+export const getLivePositions       = () => api.get('/live-portfolio/positions')
+export const getLiveClosedPositions = () => api.get('/live-portfolio/positions/closed')
+export const openLivePosition       = (body: Record<string, any>) => api.post('/live-portfolio/positions', body)
+export const closeLivePosition      = (id: number, body: Record<string, any>) => api.post(`/live-portfolio/positions/${id}/close`, body)
+export const deleteLivePosition     = (id: number) => api.delete(`/live-portfolio/positions/${id}`)
+
+// Options Scanner
+export const getScannerSetups  = (force = false) => api.get(`/options-scanner/setups${force ? '?force=true' : ''}`)
+export const triggerScan       = () => api.post('/options-scanner/run')
+export const getScannerStatus  = () => api.get('/options-scanner/status')
+
+// ARIA AI Agent
+export const getAriaAccount    = () => api.get('/options-desk/aria/account')
+export const getAriaPositions  = (status = 'OPEN') => api.get(`/options-desk/aria/positions?status=${status}`)
+export const getAriaDecisions  = (limit = 50) => api.get(`/options-desk/aria/decisions?limit=${limit}`)
+export const getAriaScoreboard = () => api.get('/options-desk/aria/scoreboard')
+export const triggerAriaExits  = () => api.post('/options-desk/aria/check-exits')
+export const resetAria         = () => api.post('/options-desk/aria/reset')
