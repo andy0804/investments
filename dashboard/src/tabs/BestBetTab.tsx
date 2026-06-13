@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine, Legend,
@@ -387,7 +388,7 @@ function StrategyCard({ name, strategy, rank, isLeader, quote }: {
 // ── Correction Proposals Panel ────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  pending:  { bg: '#fffbeb', color: '#92400e', border: '#fcd34d' },
+  pending:  { bg: 'rgba(245,158,11,0.1)', color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
   approved: { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
   rejected: { bg: '#fef2f2', color: '#991b1b', border: '#fca5a5' },
 }
@@ -544,7 +545,7 @@ function CorrectionProposalsPanel({ overallWinRate, onChanged }: { overallWinRat
                   <div style={{ fontSize: '0.6rem', color: 'var(--text-dim)', fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.1em', marginBottom: 6 }}>PROPOSED CHANGES</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {Object.entries(changes).map(([key, val]: [string, any]) => (
-                      <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: '0.73rem', padding: '6px 10px', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 5 }}>
+                      <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: '0.73rem', padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 5 }}>
                         <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--cyan)', minWidth: 200, flexShrink: 0 }}>{key.replace(/_/g, '_')}</span>
                         <span style={{ color: 'var(--red)', fontFamily: 'monospace' }}>{String(val.from)}</span>
                         <span style={{ color: 'var(--text-dim)' }}>→</span>
@@ -583,6 +584,7 @@ export default function BestBetTab() {
   const [quotes,     setQuotes]     = useState<Record<string, LiveQuote>>({})
   const [allProposals, setAllProposals] = useState<any[]>([])
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const info = usePageInfo()
 
   const loadProposals = () =>
     getCorrectionProposals('all').then(r => setAllProposals(r.data.proposals ?? [])).catch(() => {})
@@ -652,6 +654,26 @@ export default function BestBetTab() {
 
   return (
     <div>
+      {info.show && (
+        <PageInfoModal
+          title="Best Ideas — Strategy Race"
+          subtitle="5 competing strategies · same candidates · 14-day outcomes"
+          benefit="See which pick strategy has the best track record so you can trust today's recommendation more confidently."
+          sections={[
+            { title: 'What this page shows', body: 'Five different selection strategies (SOTD Default, High Conviction, Momentum, Recovery, Composite) are applied to the same daily candidate universe. Each strategy picks a different stock — or sometimes the same one. After 14 trading days, every pick is graded: win = outperforms SPY by >2%.' },
+            { title: 'The 5 strategies explained', body: '', bullets: [
+              'SOTD Default — highest V3 composite score, most consistent coverage',
+              'High Conviction — only enters when score ≥75 (ultra-selective)',
+              'Momentum — follows unusual volume surges (≥1.3× avg) to track institutional flow',
+              'Recovery — targets RSI 35–55 bounces from oversold conditions',
+              'Composite — best percentile rank across score + volume + 10d momentum combined',
+            ]},
+            { title: 'How you benefit', body: 'The leaderboard tells you which strategy is winning over the trailing 14-day settled picks. If High Conviction has a 70% win rate but SOTD Default is 50%, you know to weight the High Conviction pick more heavily today. The consensus signal (when 3+ strategies agree) is historically the strongest single indicator.' },
+            { title: 'Outcomes & grading', body: 'An outcome is marked as Win if the pick outperforms SPY by >2% at exactly 14 trading days. Outcomes are pending until that threshold is reached. Click "↻ Update Outcomes" to grade any picks that have passed their 14-day mark.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
         <div>
@@ -661,6 +683,7 @@ export default function BestBetTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <InfoButton onClick={info.open} />
           <button className="btn sm" onClick={() => { setComputing(true); computeStrategyOutcomes().then(load).finally(() => setComputing(false)) }} disabled={computing}>
             {computing ? '…' : '↻'} Update Outcomes
           </button>
@@ -834,7 +857,7 @@ export default function BestBetTab() {
                   <CartesianGrid strokeDasharray="2 4" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={v => `${v}%`} tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} width={40} />
-                  <ReferenceLine y={0} stroke="#e5e7eb" strokeDasharray="4 4" />
+                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
                   <Tooltip
                     formatter={(v: any, name: any) => [`${v >= 0 ? '+' : ''}${v}%`, name]}
                     labelFormatter={l => `Date: ${l}`}

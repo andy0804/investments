@@ -18,6 +18,7 @@ export const getSotdFull        = (forceRefresh = false) =>
   api.get(`/analysis/sotd/full${forceRefresh ? '?force_refresh=true' : ''}`)
 
 export const getSotdHistory     = () => api.get('/analysis/sotd/history')
+export const getSotdRepeatHits  = () => api.get('/analysis/sotd/repeat-hits')
 
 // Price history for mini chart
 export const getPriceHistory    = (symbol: string, days = 30) =>

@@ -54,6 +54,29 @@ def bs_price(S: float, K: float, T: float, r: float, sigma: float, is_call: bool
         return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
 
 
+def bs_implied_vol(S: float, K: float, T: float, r: float, market_price: float, is_call: bool) -> float | None:
+    """
+    Back-solve for IV using bisection on Black-Scholes.
+    Returns IV as a decimal (e.g. 0.65 = 65%) or None if unsolvable.
+    """
+    if T <= 0 or market_price <= 0 or S <= 0 or K <= 0:
+        return None
+    intrinsic = max(S - K, 0) if is_call else max(K - S, 0)
+    if market_price < intrinsic - 0.01:
+        return None
+    lo, hi = 0.001, 5.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        p = bs_price(S, K, T, r, mid, is_call)
+        if abs(p - market_price) < 0.001:
+            return round(mid, 6)
+        if p < market_price:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 6)
+
+
 def bs_greeks(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> dict:
     """
     Compute full Greek set from Black-Scholes.
@@ -161,20 +184,47 @@ def fetch_options_chain(ticker: str, expiry: str) -> dict:
     r = RISK_FREE_RATE
 
     def _enrich(row: dict, is_call: bool) -> dict:
-        iv_raw = _safe_float(row.get("impliedVolatility"), 0.0) or 0.0
-        K      = _safe_float(row.get("strike"), 0.0) or 0.0
+        K          = _safe_float(row.get("strike"), 0.0) or 0.0
+        iv_raw     = _safe_float(row.get("impliedVolatility"), 0.0) or 0.0
+        bid        = _safe_float(row.get("bid"))
+        ask        = _safe_float(row.get("ask"))
+        last_price = _safe_float(row.get("lastPrice"), 0.0) or 0.0
+
+        # yfinance often returns bid=ask=0 when markets are closed or the contract
+        # is illiquid. Fall back to lastPrice as a mid-price proxy.
+        using_last = False
+        if (bid is None or bid == 0) and (ask is None or ask == 0) and last_price > 0:
+            bid = None  # keep as None so UI can show "—" for spread
+            ask = None
+            mid = round(last_price, 3)
+            using_last = True
+        else:
+            mid = round((bid + ask) / 2.0, 3) if bid is not None and ask is not None else None
+
+        # Equity options always have IV >= 5%. Values below this are yfinance
+        # placeholders (e.g. 0.2%, 1.6%) — back-calculate from available price.
+        # For DTE >= 21 days, lastPrice is recent enough to give a reliable BS result.
+        MIN_IV = 0.05  # 5% hard floor for any equity option
+        ref_price = mid if mid and mid > 0 else None
+        if iv_raw < MIN_IV and ref_price and K > 0 and T >= 21 / 365:
+            solved = bs_implied_vol(S, K, T, r, ref_price, is_call)
+            if solved and 0.05 <= solved <= 5.0:  # 5%–500% sanity bounds
+                iv_raw = solved
+            else:
+                iv_raw = 0.0  # unsolvable — mark invalid so callers skip it
+        elif iv_raw < MIN_IV:
+            iv_raw = 0.0  # too short DTE or no price — mark invalid
+
         greeks = bs_greeks(S, K, T, r, iv_raw, is_call) if iv_raw > 0 and K > 0 else {}
         bs_val = bs_price(S, K, T, r, iv_raw, is_call) if iv_raw > 0 and K > 0 else None
-        bid = _safe_float(row.get("bid"))
-        ask = _safe_float(row.get("ask"))
-        mid = round((bid + ask) / 2.0, 3) if bid is not None and ask is not None else None
         return {
             "contractSymbol": str(row.get("contractSymbol", "")),
             "strike":         round(K, 4),
             "bid":            bid,
             "ask":            ask,
             "mid":            mid,
-            "lastPrice":      _safe_float(row.get("lastPrice"), 0.0),
+            "lastPrice":      last_price,
+            "usingLastPrice": using_last,
             "volume":         _safe_int(row.get("volume")),
             "openInterest":   _safe_int(row.get("openInterest")),
             "iv":             round(iv_raw * 100, 2),  # as %
@@ -194,6 +244,9 @@ def fetch_options_chain(ticker: str, expiry: str) -> dict:
     puts  = [_enrich(row, False) for row in puts_df.to_dict("records")]
 
     expected_move = compute_expected_move(calls, puts, S)
+    all_rows = calls + puts
+    stale_count = sum(1 for r in all_rows if r.get("usingLastPrice"))
+    quotes_stale = stale_count > len(all_rows) * 0.5 if all_rows else False
 
     return {
         "underlying":    round(S, 4),
@@ -202,6 +255,7 @@ def fetch_options_chain(ticker: str, expiry: str) -> dict:
         "expected_move": round(expected_move, 4),
         "calls":         calls,
         "puts":          puts,
+        "quotes_stale":  quotes_stale,
     }
 
 

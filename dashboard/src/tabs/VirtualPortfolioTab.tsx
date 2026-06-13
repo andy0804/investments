@@ -3,6 +3,7 @@ import {
   getVirtualSummary, getVirtualClosed, getVirtualDecisions,
   getVirtualPerformance, postVirtualReload, postVirtualBackfill, postVirtualEvaluate,
 } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
 
 const S: Record<string, React.CSSProperties> = {
@@ -374,6 +375,8 @@ export default function VirtualPortfolioTab() {
 
   useEffect(() => { loadSummary() }, [])
 
+  const info = usePageInfo()
+
   const act = (key: string, fn: () => Promise<any>, successMsg: string) => {
     setBusy(key); setMsg('')
     fn().then(() => { setMsg(successMsg); loadSummary() })
@@ -391,6 +394,23 @@ export default function VirtualPortfolioTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {info.show && (
+        <PageInfoModal
+          title="AI Portfolio — Paper Trading"
+          subtitle="ARIA's autonomous paper trading account"
+          benefit="Watch how an AI-managed portfolio performs on paper so you can calibrate trust in the agent's recommendations before committing real money."
+          sections={[
+            { title: 'What this page shows', body: 'ARIA (the AI trading agent) manages a $10,000 virtual portfolio using SOTD signals. It opens, monitors, and closes paper trades based on technical signals, stop-loss rules, and target exits. No real money is involved.' },
+            { title: 'How ARIA decides', body: 'ARIA reads each day\'s SOTD pick, checks the signal strength and regime, then decides whether to open a position. Position size follows Kelly Criterion adjusted for your risk tolerance. Stops are set at -8% from entry (hard stop) and -5% (soft review).' },
+            { title: 'Backfill & Evaluation', body: '"Backfill" replays historical SOTD picks to simulate what would have happened if ARIA had been trading since launch. "Evaluate" scores all open positions against current prices and updates P&L.' },
+            { title: 'How you benefit', body: 'Compare ARIA\'s paper returns vs SPY over the same period. If ARIA consistently outperforms on paper, it validates the signal quality. If not, use the data to tune parameters before trusting the picks with real capital.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+        <InfoButton onClick={info.open} />
+      </div>
 
       {/* Suspended banner */}
       {s.is_suspended && (

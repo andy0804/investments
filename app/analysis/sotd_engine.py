@@ -108,6 +108,43 @@ async def _cache_pick(pick_date: str, symbol: str | None, result: dict):
         logger.warning("_cache_pick failed: %s", e)
 
 
+async def _get_prev_pick() -> str | None:
+    """Return the most recent prior pick symbol, or None."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT symbol FROM stock_picks WHERE symbol != '' ORDER BY pick_date DESC LIMIT 1"
+            ) as cur:
+                row = await cur.fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+async def _log_repeat_hit(ticker: str, score: int, pick_date: str) -> None:
+    """Record that ticker scored #1 but was suppressed as a repeat pick."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS repeat_pick_log (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   ticker TEXT NOT NULL,
+                   score INTEGER,
+                   suppressed_on TEXT NOT NULL,
+                   hit_count INTEGER NOT NULL DEFAULT 1
+                )"""
+            )
+            await db.execute(
+                """INSERT INTO repeat_pick_log (ticker, score, suppressed_on)
+                   VALUES (?, ?, ?)""",
+                (ticker, score, pick_date),
+            )
+            await db.commit()
+        logger.info("sotd_engine: repeat pick suppressed — %s (score %s) on %s", ticker, score, pick_date)
+    except Exception as e:
+        logger.warning("_log_repeat_hit failed: %s", e)
+
+
 # ── Scalar helper ─────────────────────────────────────────────────────────────
 
 def _scalar(val) -> float:
@@ -740,8 +777,8 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
         min_avg_volume = int(float(_cfg.get("universe_min_avg_volume", "1000000")))
         market_cap     = _cfg.get("universe_min_market_cap", "mid")
 
-    # Step 1: portfolio exclusion + screener
-    portfolio = await _get_portfolio_symbols()
+    # Step 1: screener (no portfolio exclusion — all stocks considered)
+    portfolio: set[str] = set()
     await _emit({"step": "screener", "status": "running",
                  "msg": f"Scanning FinViz (price>${min_price:.0f} · vol>{min_avg_volume//1000:.0f}K · cap>{market_cap})…"})
     try:
@@ -764,7 +801,7 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
         return result
 
     await _emit({"step": "screener", "status": "done",
-                 "msg": f"{len(candidates)} candidates after portfolio exclusion",
+                 "msg": f"{len(candidates)} candidates passed filters",
                  "count": len(candidates)})
 
     # Step 2: market data
@@ -871,7 +908,23 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
                      "msg": f"V3 top: {top['ticker']} {top['score']['total']} pts (tech {top['score'].get('tech_component')} + fund {top['score'].get('fund_component')}){fund_note} | {regime}",
                      "top_ticker": top["ticker"], "top_score": top["score"]["total"]})
 
-    llm_input = _build_llm_input(scored)
+    # Suppress repeat pick: if the #1 scorer was also yesterday's pick, log and exclude it
+    repeat_suppressed: dict | None = None
+    prev_ticker = await _get_prev_pick()
+    scored_for_llm = scored
+    if prev_ticker and scored and scored[0]["ticker"] == prev_ticker:
+        suppressed = scored[0]
+        repeat_suppressed = {
+            "ticker": suppressed["ticker"],
+            "score":  suppressed["score"]["total"],
+            "reason": f"Already picked on the previous session — showing next best pick",
+        }
+        await _log_repeat_hit(suppressed["ticker"], suppressed["score"]["total"], today)
+        scored_for_llm = scored[1:]  # drop the #1, pass the rest to LLM
+        await _emit({"step": "scoring", "status": "done",
+                     "msg": f"Repeat suppressed: {suppressed['ticker']} — expanding to next best candidate"})
+
+    llm_input = _build_llm_input(scored_for_llm)
     if not llm_input:
         await _emit({"step": "llm", "status": "error",
                      "msg": "All candidates failed hard filters — nothing to rank"})
@@ -960,6 +1013,7 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
         "other_considered":      llm_result.get("other_considered", []),
         "all_candidates":        all_candidates,
         "conviction_threshold":  conviction_threshold,
+        "repeat_suppressed":     repeat_suppressed,
         "universe_filters": {
             "min_price":      min_price,
             "min_avg_volume": min_avg_volume,

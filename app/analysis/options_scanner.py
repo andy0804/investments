@@ -155,7 +155,12 @@ def _analyze_ticker(ticker: str) -> dict | None:
         return None
 
     # 6. IV metrics
-    atm_iv     = _compute_atm_iv(calls, puts, S)
+    atm_iv = _compute_atm_iv(calls, puts, S)
+    # Sanity check: equity IV below 5% is impossible — options chain had no live quotes
+    # (e.g. scanner ran at market open before MM quotes populated). Fall back to HV.
+    if atm_iv < 5.0:
+        log.warning("scanner: %s ATM IV %.1f%% implausibly low — using HV %.1f%% as proxy", ticker, atm_iv, hv_30)
+        atm_iv = hv_30
     iv_vs_rv   = atm_iv / hv_30 if hv_30 > 0 else 1.0
     iv_regime  = _classify_iv_regime(iv_vs_rv)
     iv_rank_approx = _approx_iv_rank(atm_iv, hv_30)
@@ -280,9 +285,11 @@ def _compute_technicals_sync(hist: pd.DataFrame, S: float, close: pd.Series) -> 
         sma_20    = float(close.rolling(20).mean().iloc[-1])
         sma_50    = float(close.rolling(50).mean().iloc[-1])
         vol       = hist["Volume"]
-        avg_vol   = float(vol.rolling(20).mean().iloc[-1])
-        curr_vol  = float(vol.iloc[-1])
-        vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 1.0
+        # Always compare against the last *complete* trading day to avoid
+        # partial-day distortion when the scanner runs during market hours.
+        prev_vol  = float(vol.iloc[-2]) if len(vol) >= 2 else float(vol.iloc[-1])
+        avg_vol   = float(vol.iloc[-21:-1].mean()) if len(vol) >= 21 else float(vol.mean())
+        vol_ratio = prev_vol / avg_vol if avg_vol > 0 else 1.0
 
         return {
             "rsi":          round(rsi, 1),
@@ -937,14 +944,15 @@ def _compute_trade_metrics(strategy: str, legs: list) -> dict:
     else:
         entry_cost = max_profit = max_loss = breakeven = rr = None
 
-    # Probability-of-profit approximation from buy-leg delta
+    # Probability-of-profit approximation from buy-leg delta.
+    # For both calls and puts, |delta| ≈ probability of expiring ITM = PoP for a long.
+    # A 25Δ call or put has ~25% chance of being profitable at expiry.
     pop = None
     if buy_legs:
         d = abs(buy_legs[0].get("delta") or 0)
-        if strategy in ("Long Call", "Bull Call Spread"):
-            pop = round(d * 100)
-        elif strategy in ("Long Put", "Bear Put Spread"):
-            pop = round((1 - d) * 100)
+        if d > 0:  # skip if delta is 0 (bad IV data produced invalid greeks)
+            if strategy in ("Long Call", "Bull Call Spread", "Long Put", "Bear Put Spread"):
+                pop = round(d * 100)
     if sell_legs and strategy == "Short Put":
         d = abs(sell_legs[0].get("delta") or 0)
         pop = round((1 - d) * 100)

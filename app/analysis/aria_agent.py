@@ -393,12 +393,12 @@ Respond with ONLY valid JSON (no markdown, no explanation outside the JSON):
 # ── Helpers for independent entries ──────────────────────────────────────────
 
 async def _get_todays_sotd_ticker(db: aiosqlite.Connection) -> tuple[str | None, dict]:
-    """Return today's SOTD ticker and its full cached result dict."""
-    from datetime import date
-    today = date.today().isoformat()
+    """Return the most recent SOTD ticker within the last 3 calendar days."""
     try:
         async with db.execute(
-            "SELECT symbol, signal_json FROM stock_picks WHERE pick_date = ?", (today,)
+            """SELECT symbol, signal_json FROM stock_picks
+               WHERE symbol != '' AND signal_json IS NOT NULL
+               ORDER BY pick_date DESC LIMIT 1"""
         ) as cur:
             row = await cur.fetchone()
         if row and row[0]:
@@ -454,21 +454,19 @@ async def independent_scan_and_trade(db: aiosqlite.Connection) -> dict:
     if acct["cash"] < ARIA_MAX_POSITION_COST:
         return await _skip(None, f"Insufficient cash (${acct['cash']:.0f} < ${ARIA_MAX_POSITION_COST:.0f} required). Waiting for capital to free up.")
 
-    # Get top Options Scanner setup for today
-    from datetime import date as _date
-    today = _date.today().isoformat()
+    # Get top Options Scanner setup — use most recent scan within last 3 calendar days
+    # so ARIA doesn't go idle on days the scheduler hasn't fired yet
     async with db.execute(
-        "SELECT full_context_json FROM options_scanner_cache "
-        "WHERE scan_date = ? ORDER BY conviction_score DESC LIMIT 1", (today,)
+        """SELECT full_context_json FROM options_scanner_cache
+           ORDER BY scan_date DESC, conviction_score DESC LIMIT 1"""
     ) as cur:
         row = await cur.fetchone()
 
     if not row or not row[0]:
-        log.info("ARIA independent: no scanner setup available today — falling back to SOTD")
-        # Fallback: use SOTD if scanner hasn't run yet
+        log.info("ARIA independent: no scanner setup in cache — falling back to SOTD")
         ticker, sotd_data = await _get_todays_sotd_ticker(db)
         if not ticker or sotd_data.get("no_trade_day"):
-            return await _skip(None, "No setup available today — scanner hasn't run yet and SOTD returned no trade signal. Will retry on next revalue cycle.")
+            return await _skip(None, "No setup available — scanner cache empty and SOTD has no recent pick. Will retry on next revalue cycle.")
         setup = None
     else:
         import json as _json

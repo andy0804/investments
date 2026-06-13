@@ -564,6 +564,11 @@ async def sotd_stream(force_refresh: bool = True):
     async def run():
         try:
             result = await run_sotd_pipeline(force_refresh=force_refresh, emit=emit)
+            try:
+                from app.performance.strategy_comparison import run_strategy_forward_picks
+                await run_strategy_forward_picks()
+            except Exception as e2:
+                logger.warning("sotd_stream: strategy picks failed: %s", e2)
             await queue.put({"step": "complete", "status": "done", "data": result})
         except Exception as e:
             logger.error("sotd_stream pipeline error: %s", e)
@@ -592,6 +597,35 @@ async def sotd_stream(force_refresh: bool = True):
             "Connection": "keep-alive",
         },
     )
+
+
+@app.get("/analysis/sotd/repeat-hits")
+async def sotd_repeat_hits():
+    """Stocks that scored #1 but were suppressed as repeat picks."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Ensure table exists before querying
+        await db.execute(
+            """CREATE TABLE IF NOT EXISTS repeat_pick_log (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               ticker TEXT NOT NULL,
+               score INTEGER,
+               suppressed_on TEXT NOT NULL,
+               hit_count INTEGER NOT NULL DEFAULT 1
+            )"""
+        )
+        async with db.execute(
+            """SELECT ticker,
+                      COUNT(*) as total_hits,
+                      MAX(score) as best_score,
+                      MIN(suppressed_on) as first_seen,
+                      MAX(suppressed_on) as last_seen
+               FROM repeat_pick_log
+               GROUP BY ticker
+               ORDER BY total_hits DESC, best_score DESC"""
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    return {"status": "ok", "repeat_hits": rows}
 
 
 @app.get("/analysis/sotd/history")

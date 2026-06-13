@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine, Legend,
@@ -118,7 +119,7 @@ function WinRateTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: '0.72rem', fontFamily: 'var(--mono)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+    <div style={{ background: '#0C1A2E', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: '0.72rem', fontFamily: 'var(--mono)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
       <div style={{ color: 'var(--text-dim)', marginBottom: 4 }}>{d?.date} · {d?.ticker}</div>
       <div style={{ color: 'var(--cyan)', fontWeight: 700 }}>Win rate: {winRateStr(d?.win_rate)}</div>
       <div style={{ color: 'var(--text-dim)', fontSize: '0.65rem' }}>Window: {d?.window} picks</div>
@@ -132,7 +133,7 @@ function AlphaTip({ active, payload }: any) {
   const alphaPt = payload.find((p: any) => p.dataKey === 'alpha')
   const cumPt   = payload.find((p: any) => p.dataKey === 'cumulative')
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: '0.72rem', fontFamily: 'var(--mono)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+    <div style={{ background: '#0C1A2E', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: '0.72rem', fontFamily: 'var(--mono)', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
       <div style={{ color: 'var(--text-dim)', marginBottom: 4 }}>{d?.date} · {d?.ticker}</div>
       {alphaPt && <div style={{ color: (d?.alpha ?? 0) >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>Pick alpha: {pct(d?.alpha)}</div>}
       {cumPt    && <div style={{ color: 'var(--cyan)', fontWeight: 700 }}>Cumulative: {pct(d?.cumulative)}</div>}
@@ -245,6 +246,7 @@ export default function SOTDHistoryTab() {
   const [chartLoad,   setChartLoad]   = useState(true)
   const [error,       setError]       = useState<string | null>(null)
   const [expanded,    setExpanded]    = useState<string | null>(null)
+  const info = usePageInfo()
   const [generating,  setGenerating]  = useState(false)
   const [computing,   setComputing]   = useState(false)
   const [activeChart, setActiveChart] = useState<'winrate' | 'alpha'>('winrate')
@@ -336,6 +338,20 @@ export default function SOTDHistoryTab() {
   return (
     <div>
       {/* ── Action bar ── */}
+      {info.show && (
+        <PageInfoModal
+          title="Pick History & Performance"
+          subtitle="Full audit trail of every SOTD pick"
+          benefit="Understand how well the agent is performing over time so you can calibrate how much conviction to put into each recommendation."
+          sections={[
+            { title: 'What this page shows', body: 'Every Stock of the Day pick since launch, with entry price, regime at pick time, score, and 14-day outcome. Each pick is graded against SPY: a win requires outperforming SPY by >2% at 14 trading days.' },
+            { title: 'Performance charts', body: 'The rolling win-rate chart shows how the algorithm\'s accuracy changes over time — look for improving or deteriorating trends. The alpha chart shows average excess return vs SPY per pick.' },
+            { title: 'Correction proposals', body: 'When the algorithm self-identifies a pattern of misses, it generates correction proposals — suggested parameter changes (e.g. raise the conviction threshold, penalise a regime type). You can approve or reject these. Approved proposals adjust the scoring engine going forward.' },
+            { title: 'How you benefit', body: 'If win rate is >55% and average alpha is positive, the picks are adding value. If it\'s declining, it signals the market regime has shifted and parameters may need tuning via Settings.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
         <div>
           <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-bright)', letterSpacing: '0.02em' }}>Pick History & Performance</div>
@@ -344,6 +360,7 @@ export default function SOTDHistoryTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <InfoButton onClick={info.open} />
           <button className="btn sm" onClick={handleComputeOutcomes} disabled={computing}>
             {computing ? '…' : '↻'} Update Outcomes
           </button>
@@ -421,7 +438,7 @@ export default function SOTDHistoryTab() {
                     <CartesianGrid strokeDasharray="2 4" stroke="#f1f5f9" vertical={false} />
                     <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} interval={tickInterval} />
                     <YAxis tickFormatter={v => `${Math.round(v * 100)}%`} domain={[0, 1]} tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} width={40} />
-                    <ReferenceLine y={0.5} stroke="#e5e7eb" strokeDasharray="4 4" label={{ value: '50%', fill: '#9ca3af', fontSize: 9, position: 'insideRight' }} />
+                    <ReferenceLine y={0.5} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" label={{ value: '50%', fill: '#9ca3af', fontSize: 9, position: 'insideRight' }} />
                     <Tooltip content={<WinRateTip />} />
                     <Line dataKey="win_rate" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: '#2563eb', strokeWidth: 0 }} activeDot={{ r: 4 }} />
                   </LineChart>
@@ -440,7 +457,7 @@ export default function SOTDHistoryTab() {
                     <CartesianGrid strokeDasharray="2 4" stroke="#f1f5f9" vertical={false} />
                     <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} interval={tickInterval} />
                     <YAxis tickFormatter={v => `${v.toFixed(0)}%`} tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} width={40} />
-                    <ReferenceLine y={0} stroke="#e5e7eb" strokeDasharray="4 4" />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" strokeDasharray="4 4" />
                     <Tooltip content={<AlphaTip />} />
                     <Line dataKey="cumulative" stroke="#16a34a" strokeWidth={2} dot={false} name="Cumulative alpha" />
                     <Line dataKey="alpha" stroke="#93c5fd" strokeWidth={1} dot={{ r: 3, strokeWidth: 0 }} strokeDasharray="3 3" name="Pick alpha" />

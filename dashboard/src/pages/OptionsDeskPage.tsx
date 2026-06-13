@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer,
   AreaChart, Area, BarChart, Bar, Cell, CartesianGrid, Legend,
@@ -25,7 +26,7 @@ interface Account {
 interface ChainRow {
   contractSymbol: string; strike: number
   bid: number | null; ask: number | null; mid: number | null
-  lastPrice: number; volume: number; openInterest: number
+  lastPrice: number; usingLastPrice?: boolean; volume: number; openInterest: number
   iv: number; inTheMoney: boolean
   delta: number | null; gamma: number | null; theta: number | null; vega: number | null
   bs_price: number | null
@@ -166,7 +167,7 @@ function getLiquidityScore(row: ChainRow): 'good' | 'fair' | 'poor' {
 }
 
 const LIQ_DOT: Record<'good' | 'fair' | 'poor', string> = {
-  good: '#16a34a', fair: '#d97706', poor: '#dc2626',
+  good: '#22C55E', fair: '#F59E0B', poor: '#EF4444',
 }
 const LIQ_TIP: Record<'good' | 'fair' | 'poor', string> = {
   good:  'Good liquidity — tight spread, healthy OI',
@@ -190,7 +191,7 @@ function TradeSnapshot({ row, side, action, qty, underlying, dte }: {
     const otmPct = underlying > 0 ? Math.abs((row.strike - underlying) / underlying) * 100 : null
     return (
       <div>
-        <div style={{ background: '#f9fafb', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 8 }}>
+        <div style={{ background: '#0C1A2E', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 8 }}>
           <div style={{ fontWeight: 700, color: 'var(--text-dim)', fontSize: '0.8rem', marginBottom: 4 }}>
             No active market for this option
           </div>
@@ -234,7 +235,7 @@ function TradeSnapshot({ row, side, action, qty, underlying, dte }: {
   // IV level
   const iv = row.iv
   const ivLevel = iv < 20 ? 'low' : iv < 35 ? 'normal' : iv < 55 ? 'elevated' : 'high'
-  const ivColor: Record<string, string> = { low: '#2563eb', normal: '#15803d', elevated: '#d97706', high: '#dc2626' }
+  const ivColor: Record<string, string> = { low: '#3B82F6', normal: '#22C55E', elevated: '#F59E0B', high: '#EF4444' }
   const ivLabel: Record<string, string> = {
     low:      'Low IV — options are cheap, good time to buy',
     normal:   'Normal IV — fairly priced',
@@ -272,9 +273,9 @@ function TradeSnapshot({ row, side, action, qty, underlying, dte }: {
     : issues.length >= 2 ? `⚠️ ${issues.join('  ·  ')}`
     : issues.length === 1 ? `⚠️ ${issues[0]}${goods.length ? '  ·  ' + goods.join(', ') : ''}`
     : `✅ ${goods.join('  ·  ')}`
-  const vBg     = action === 'SELL' ? '#eff6ff' : issues.length >= 2 ? '#fef2f2' : issues.length === 1 ? '#fffbeb' : '#f0fdf4'
-  const vBorder = action === 'SELL' ? '#93c5fd' : issues.length >= 2 ? '#fca5a5' : issues.length === 1 ? '#fcd34d' : '#86efac'
-  const vColor  = action === 'SELL' ? '#1d4ed8' : issues.length >= 2 ? '#991b1b' : issues.length === 1 ? '#92400e' : '#15803d'
+  const vBg     = action === 'SELL' ? 'rgba(59,130,246,0.08)' : issues.length >= 2 ? 'rgba(239,68,68,0.08)' : issues.length === 1 ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)'
+  const vBorder = action === 'SELL' ? 'rgba(59,130,246,0.3)' : issues.length >= 2 ? 'rgba(239,68,68,0.3)' : issues.length === 1 ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.3)'
+  const vColor  = action === 'SELL' ? '#3B82F6' : issues.length >= 2 ? '#EF4444' : issues.length === 1 ? '#F59E0B' : '#22C55E'
 
   return (
     <div style={{ marginBottom: 12 }}>
@@ -445,14 +446,14 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             { step: '5. Check the scenario grid', detail: 'Look at the bottom rows (lower stock prices) — those show your profit territory. The breakeven is your strike minus the premium paid.' },
           ].map(({ step, detail }) => (
             <div key={step} style={{ display: 'flex', gap: 12, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
-              <div style={{ minWidth: 28, height: 28, borderRadius: '50%', background: '#fef2f2', color: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--mono)', flexShrink: 0 }}>{step.split('.')[0]}</div>
+              <div style={{ minWidth: 28, height: 28, borderRadius: '50%', background: 'rgba(239,68,68,0.12)', color: '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--mono)', flexShrink: 0 }}>{step.split('.')[0]}</div>
               <div>
                 <div style={{ fontWeight: 700, marginBottom: 2 }}>{step.split('. ')[1]}</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>{detail}</div>
               </div>
             </div>
           ))}
-          <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 12px', marginTop: 8 }}>
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '10px 12px', marginTop: 8 }}>
             <strong>⚠️ Risk reminder:</strong> <span style={{ fontSize: '0.82rem' }}>When buying options, your maximum loss is always the premium you paid — never more. A $320 call can only lose $320.</span>
           </div>
         </div>
@@ -515,7 +516,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
         border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
       }} onClick={e => e.stopPropagation()}>
         {/* Sidebar */}
-        <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#ffffff', overflowY: 'auto', padding: '16px 0' }}>
+        <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#0C1A2E', overflowY: 'auto', padding: '16px 0' }}>
           <div style={{ padding: '0 16px 12px', fontWeight: 800, fontSize: '0.72rem', color: 'var(--cyan)', letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>Options Guide</div>
           {sections.map((s, i) => (
             <button key={i}
@@ -634,8 +635,8 @@ function getAdvisory(pos: Position, leg: Leg, dteVal: number, pnlPct: number, un
     verdict === 'WATCH' ? `Monitor closely — ${bullets[0].split('—')[1]?.trim() ?? 'review daily'}` :
                           `Hold — position on track, ${dteVal} days remaining`
 
-  const color = verdict === 'EXIT' ? '#dc2626' : verdict === 'WATCH' ? '#d97706' : '#16a34a'
-  const bg    = verdict === 'EXIT' ? '#fef2f2' : verdict === 'WATCH' ? '#fffbeb' : '#f0fdf4'
+  const color = verdict === 'EXIT' ? '#EF4444' : verdict === 'WATCH' ? '#F59E0B' : '#22C55E'
+  const bg    = verdict === 'EXIT' ? 'rgba(239,68,68,0.08)' : verdict === 'WATCH' ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)'
 
   return { verdict, color, bg, summary, bullets, stopHint, targetHint }
 }
@@ -780,7 +781,7 @@ function PortfolioPanel() {
             ? <>Last refreshed: <strong style={{ color: 'var(--text)' }}>{lastRefreshed.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</strong></>
             : 'Loading…'}
           {staleMin != null && staleMin > 5 && (
-            <span style={{ color: '#92400e', marginLeft: 6 }}>· Prices {staleMin}m old</span>
+            <span style={{ color: '#F59E0B', marginLeft: 6 }}>· Prices {staleMin}m old</span>
           )}
         </span>
         {nextRefreshFmt && (
@@ -862,7 +863,7 @@ function PortfolioPanel() {
                 <YAxis tick={{ fontSize: 9, fill: 'var(--text-dim)', fontFamily: 'var(--mono)' }}
                   tickFormatter={v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`} />
                 <Tooltip formatter={(v: number, name: string) => [`${v >= 0 ? '+' : ''}${v?.toFixed(2)}%`, name === 'portfolio' ? 'Portfolio' : 'SPY']}
-                  labelFormatter={l => l} contentStyle={{ fontSize: '0.72rem', fontFamily: 'var(--mono)' }} />
+                  labelFormatter={l => l} contentStyle={{ fontSize: '0.72rem', fontFamily: 'var(--mono)', background: '#0C1A2E', border: '1px solid rgba(255,255,255,0.1)', color: '#CBD5E1' }} />
                 <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="4 4" />
                 <Area type="monotone" dataKey="portfolio" stroke="var(--cyan)" strokeWidth={2}
                   fill="url(#portGrad)" dot={false} connectNulls />
@@ -889,7 +890,7 @@ function PortfolioPanel() {
                 <XAxis dataKey="label" tick={{ fontSize: 9, fill: 'var(--text-dim)', fontFamily: 'var(--mono)' }} />
                 <YAxis tick={{ fontSize: 9, fill: 'var(--text-dim)', fontFamily: 'var(--mono)' }} tickFormatter={v => `${v.toFixed(1)}%`} />
                 <Tooltip formatter={(v: number, name: string) => [`${v >= 0 ? '+' : ''}${v?.toFixed(2)}%`, name === 'portfolio' ? 'Portfolio' : 'SPY']}
-                  contentStyle={{ fontSize: '0.72rem', fontFamily: 'var(--mono)' }} />
+                  contentStyle={{ fontSize: '0.72rem', fontFamily: 'var(--mono)', background: '#0C1A2E', border: '1px solid rgba(255,255,255,0.1)', color: '#CBD5E1' }} />
                 <Bar dataKey="portfolio" name="Portfolio" radius={[2, 2, 0, 0]}>
                   {monthlyData.map((d, i) => (
                     <Cell key={i} fill={d.portfolio >= 0 ? '#22c55e' : '#ef4444'} />
@@ -912,7 +913,7 @@ function PortfolioPanel() {
             {positions.length}
           </span>
           {staleMin != null && staleMin > 15 && (
-            <span style={{ fontSize: '0.65rem', color: '#92400e', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '2px 8px' }}>
+            <span style={{ fontSize: '0.65rem', color: '#F59E0B', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 6, padding: '2px 8px' }}>
               ⚠ {staleMin}m since last price update
             </span>
           )}
@@ -1136,8 +1137,8 @@ function PortfolioPanel() {
                                   </div>
                                 ))}
                                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  <div style={{ fontSize: '0.65rem', color: '#16a34a' }}>🎯 {advisory.targetHint}</div>
-                                  <div style={{ fontSize: '0.65rem', color: '#dc2626' }}>🛑 {advisory.stopHint}</div>
+                                  <div style={{ fontSize: '0.65rem', color: '#22C55E' }}>🎯 {advisory.targetHint}</div>
+                                  <div style={{ fontSize: '0.65rem', color: '#EF4444' }}>🛑 {advisory.stopHint}</div>
                                 </div>
                               </div>
 
@@ -1168,10 +1169,10 @@ function PortfolioPanel() {
 
                                     {beDistAbs != null && bePct != null && (
                                       <div style={{ padding: '8px 10px', borderRadius: 6,
-                                        background: aboveBE ? '#f0fdf4' : '#fef3c7',
-                                        border: `1px solid ${aboveBE ? '#86efac' : '#fcd34d'}` }}>
+                                        background: aboveBE ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+                                        border: `1px solid ${aboveBE ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.2)'}` }}>
                                         <div style={{ fontWeight: 700, fontSize: '0.72rem',
-                                          color: aboveBE ? '#15803d' : '#92400e' }}>
+                                          color: aboveBE ? '#22C55E' : '#F59E0B' }}>
                                           {aboveBE
                                             ? `✅ Already above breakeven by $${beDistAbs.toFixed(2)} (${Math.abs(bePct).toFixed(1)}%)`
                                             : `⚠️ $${beDistAbs.toFixed(2)} below breakeven — need ${Math.abs(bePct).toFixed(1)}% move`}
@@ -1266,7 +1267,7 @@ function PortfolioPanel() {
                                 const dailyMovePct = vol != null ? vol / Math.sqrt(252) : null
                                 const dailyMoveDollar = dailyMovePct != null && ul ? ul * (dailyMovePct / 100) : null
                                 const ivLevel = vol == null ? '' : vol < 20 ? 'low' : vol < 35 ? 'normal' : vol < 55 ? 'elevated' : 'very high'
-                                const ivColor = vol == null ? 'var(--text-dim)' : vol < 20 ? '#2563eb' : vol < 35 ? '#15803d' : vol < 55 ? '#d97706' : '#dc2626'
+                                const ivColor = vol == null ? 'var(--text-dim)' : vol < 20 ? '#3B82F6' : vol < 35 ? '#22C55E' : vol < 55 ? '#F59E0B' : '#EF4444'
                                 const popPct  = d != null ? Math.round(Math.abs(d) * 100) : null
 
                                 const greeks = [
@@ -1286,7 +1287,7 @@ function PortfolioPanel() {
                                   },
                                   th != null && {
                                     symbol: 'θ', name: 'Theta', value: `-$${dailyDecay?.toFixed(2) ?? '?'}/day`,
-                                    color: (dailyDecay ?? 0) > 20 ? '#dc2626' : (dailyDecay ?? 0) > 8 ? '#d97706' : 'var(--text-dim)',
+                                    color: (dailyDecay ?? 0) > 20 ? '#EF4444' : (dailyDecay ?? 0) > 8 ? '#F59E0B' : 'var(--text-dim)',
                                     headline: dailyDecay != null
                                       ? `Costs $${dailyDecay.toFixed(2)}/day just by holding — even if ${pos.ticker} doesn't move`
                                       : 'Daily time decay cost',
@@ -1797,8 +1798,8 @@ function LivePortfolioPanel() {
                                     <div style={{ fontWeight: 700, fontFamily: 'var(--mono)', fontSize: '0.84rem' }}>${ul.toFixed(2)}</div>
                                   </div>}
                                   {beDistAbs != null && bePct != null && (
-                                    <div style={{ padding: '8px 10px', borderRadius: 6, background: aboveBE ? '#f0fdf4' : '#fef3c7', border: `1px solid ${aboveBE ? '#86efac' : '#fcd34d'}` }}>
-                                      <div style={{ fontWeight: 700, fontSize: '0.72rem', color: aboveBE ? '#15803d' : '#92400e' }}>
+                                    <div style={{ padding: '8px 10px', borderRadius: 6, background: aboveBE ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)', border: `1px solid ${aboveBE ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.2)'}` }}>
+                                      <div style={{ fontWeight: 700, fontSize: '0.72rem', color: aboveBE ? '#22C55E' : '#F59E0B' }}>
                                         {aboveBE ? `✅ Above breakeven by $${beDistAbs.toFixed(2)} (${Math.abs(bePct).toFixed(1)}%)` : `⚠️ $${beDistAbs.toFixed(2)} below breakeven — need ${Math.abs(bePct).toFixed(1)}% move`}
                                       </div>
                                     </div>
@@ -1875,7 +1876,7 @@ function LivePortfolioPanel() {
                                 const dailyMovePct   = vol != null ? vol / Math.sqrt(252) : null
                                 const dailyMoveDollar = dailyMovePct != null && ul ? ul * (dailyMovePct / 100) : null
                                 const ivLevel = vol == null ? '' : vol < 20 ? 'low' : vol < 35 ? 'normal' : vol < 55 ? 'elevated' : 'very high'
-                                const ivColor = vol == null ? 'var(--text-dim)' : vol < 20 ? '#2563eb' : vol < 35 ? '#15803d' : vol < 55 ? '#d97706' : '#dc2626'
+                                const ivColor = vol == null ? 'var(--text-dim)' : vol < 20 ? '#3B82F6' : vol < 35 ? '#22C55E' : vol < 55 ? '#F59E0B' : '#EF4444'
                                 const popPct  = d != null ? Math.round(Math.abs(d) * 100) : null
                                 const greeks = [
                                   d != null && { symbol: 'Δ', name: 'Delta', value: d.toFixed(2),
@@ -1887,7 +1888,7 @@ function LivePortfolioPanel() {
                                       popPct != null ? `~${popPct}% chance of expiring in-the-money.` : '',
                                     ].filter(Boolean) },
                                   th != null && { symbol: 'θ', name: 'Theta', value: `-$${dailyDecay?.toFixed(2) ?? '?'}/day`,
-                                    color: (dailyDecay ?? 0) > 20 ? '#dc2626' : (dailyDecay ?? 0) > 8 ? '#d97706' : 'var(--text-dim)',
+                                    color: (dailyDecay ?? 0) > 20 ? '#EF4444' : (dailyDecay ?? 0) > 8 ? '#F59E0B' : 'var(--text-dim)',
                                     headline: dailyDecay != null ? `Costs $${dailyDecay.toFixed(2)}/day to hold` : 'Daily time decay',
                                     explain: [
                                       `Options lose value each day even if the stock doesn't move.`,
@@ -1963,7 +1964,9 @@ function LivePortfolioPanel() {
                 {closed.map(pos => {
                   const realized = liveRealizedPnl(pos)
                   const cost     = pos.fill_price * 100 * pos.quantity
-                  const retPct   = cost > 0 ? (realized / cost) * 100 : 0
+                  const rawRetPct = cost > 0 ? (realized / cost) * 100 : 0
+                  // Long options can't lose more than 100% — cap to avoid display artefacts from commission rounding
+                  const retPct = pos.action === 'BUY' ? Math.max(rawRetPct, -100) : rawRetPct
                   return (
                     <tr key={pos.id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '8px 10px', fontFamily: 'var(--mono)' }}>
@@ -2137,15 +2140,15 @@ function AccountBar({ account, marketStatus, onHelp, onReval, revalLoading }: {
           display: 'inline-flex', alignItems: 'center', gap: 4,
           padding: '1px 8px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
           fontFamily: 'var(--mono)',
-          background: isLive ? '#f0fdf4' : '#fef3c7',
-          color: isLive ? '#15803d' : '#92400e',
-          border: `1px solid ${isLive ? '#86efac' : '#fcd34d'}`,
+          background: isLive ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.08)',
+          color: isLive ? '#22C55E' : '#F59E0B',
+          border: `1px solid ${isLive ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.2)'}`,
         }} title={marketStatus?.reason ?? ''}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: isLive ? '#22c55e' : '#f59e0b', display: 'inline-block' }} />
           {isLive ? 'LIVE' : (marketStatus?.data_freshness === 'STALE' ? 'STALE' : '—')}
         </span>
         {marketStatus && !isLive && (
-          <span style={{ fontSize: '0.58rem', color: '#92400e', maxWidth: 120, lineHeight: 1.3, marginTop: 2, display: 'block' }}>
+          <span style={{ fontSize: '0.58rem', color: '#F59E0B', maxWidth: 120, lineHeight: 1.3, marginTop: 2, display: 'block' }}>
             {marketStatus.is_weekend ? 'Weekend — last close prices' :
              marketStatus.is_holiday ? 'Holiday — last close prices' : 'Market closed'}
           </span>
@@ -2188,12 +2191,12 @@ function AccountBar({ account, marketStatus, onHelp, onReval, revalLoading }: {
 function AlertsBanner({ alerts }: { alerts: Alert[] }) {
   if (!alerts.length) return null
   return (
-    <div style={{ background: '#fffbeb', borderBottom: '1px solid #fcd34d', padding: '6px 16px', display: 'flex', gap: 16, overflowX: 'auto', flexShrink: 0 }}>
+    <div style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.2)', padding: '6px 16px', display: 'flex', gap: 16, overflowX: 'auto', flexShrink: 0 }}>
       {alerts.map((a, i) => (
         <div key={i} style={{
           display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0,
           fontSize: '0.75rem',
-          color: a.level === 'danger' ? '#991b1b' : a.level === 'warning' ? '#92400e' : '#1e40af',
+          color: a.level === 'danger' ? '#EF4444' : a.level === 'warning' ? '#F59E0B' : '#3B82F6',
         }}>
           <span>{a.level === 'danger' ? '🔴' : a.level === 'warning' ? '🟡' : '🔵'}</span>
           <span>{a.message}</span>
@@ -2224,9 +2227,9 @@ function ChainTable({
       <table className="opts-chain-table">
         <thead>
           <tr>
-            <th colSpan={5} style={{ color: 'var(--green)', background: '#f0fdf4' }}>CALLS ▲</th>
+            <th colSpan={5} style={{ color: 'var(--green)', background: 'rgba(34,197,94,0.08)' }}>CALLS ▲</th>
             <th style={{ background: 'var(--cyan-bg)', color: 'var(--cyan)' }}>STRIKE</th>
-            <th colSpan={5} style={{ color: 'var(--red)', background: '#fef2f2' }}>PUTS ▼</th>
+            <th colSpan={5} style={{ color: 'var(--red)', background: 'rgba(239,68,68,0.08)' }}>PUTS ▼</th>
           </tr>
           <tr>
             <th>BID</th><th>ASK</th><th>IV%</th><th>Δ</th><th>θ</th>
@@ -2253,12 +2256,12 @@ function ChainTable({
             return (
               <tr key={strike} className={isAtm ? 'opts-atm-row' : ''}>
                 <td className={call?.inTheMoney ? 'opts-itm' : ''} onClick={() => call && onSelect('call', call)} style={{ cursor: call ? 'pointer' : 'default' }}>
-                  {call?.bid != null ? call.bid.toFixed(2) : '—'}
+                  {call?.usingLastPrice ? <span style={{ color: 'var(--text-dim)' }}>~{call.mid?.toFixed(2) ?? '—'}</span> : (call?.bid != null ? call.bid.toFixed(2) : '—')}
                 </td>
                 <td className={call?.inTheMoney ? 'opts-itm' : ''} onClick={() => call && onSelect('call', call)} style={{ cursor: call ? 'pointer' : 'default' }}>
-                  {call?.ask != null ? call.ask.toFixed(2) : '—'}
+                  {call?.usingLastPrice ? <span style={{ color: 'var(--text-dim)' }}>—</span> : (call?.ask != null ? call.ask.toFixed(2) : '—')}
                 </td>
-                <td>{call?.iv != null ? call.iv.toFixed(1) : '—'}</td>
+                <td>{call?.usingLastPrice ? '—' : (call?.iv != null ? call.iv.toFixed(1) : '—')}</td>
                 <td>{call?.delta != null ? call.delta.toFixed(2) : '—'}</td>
                 <td>{call?.theta != null ? call.theta.toFixed(3) : '—'}</td>
                 <td style={{ background: isAtm ? 'var(--cyan-bg)' : 'var(--panel-inset)', fontWeight: 700, textAlign: 'center', color: 'var(--cyan)', fontFamily: 'var(--mono)' }}>
@@ -2269,12 +2272,12 @@ function ChainTable({
                   {strike.toFixed(2)}
                 </td>
                 <td className={put?.inTheMoney ? 'opts-itm' : ''} onClick={() => put && onSelect('put', put)} style={{ cursor: put ? 'pointer' : 'default' }}>
-                  {put?.bid != null ? put.bid.toFixed(2) : '—'}
+                  {put?.usingLastPrice ? <span style={{ color: 'var(--text-dim)' }}>~{put.mid?.toFixed(2) ?? '—'}</span> : (put?.bid != null ? put.bid.toFixed(2) : '—')}
                 </td>
                 <td className={put?.inTheMoney ? 'opts-itm' : ''} onClick={() => put && onSelect('put', put)} style={{ cursor: put ? 'pointer' : 'default' }}>
-                  {put?.ask != null ? put.ask.toFixed(2) : '—'}
+                  {put?.usingLastPrice ? <span style={{ color: 'var(--text-dim)' }}>—</span> : (put?.ask != null ? put.ask.toFixed(2) : '—')}
                 </td>
-                <td>{put?.iv != null ? put.iv.toFixed(1) : '—'}</td>
+                <td>{put?.usingLastPrice ? '—' : (put?.iv != null ? put.iv.toFixed(1) : '—')}</td>
                 <td style={{ color: put?.delta != null && put.delta < 0 ? 'var(--red)' : undefined }}>{put?.delta != null ? put.delta.toFixed(2) : '—'}</td>
                 <td>{put?.theta != null ? put.theta.toFixed(3) : '—'}</td>
               </tr>
@@ -2340,7 +2343,10 @@ function PositionCard({ pos, onClose, onAI }: {
 
   const pnl = pos.unrealized_pnl ?? pos.realized_pnl ?? 0
   const cost = Math.abs(pos.total_cost)
-  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0
+  const rawPnlPct = cost > 0 ? (pnl / cost) * 100 : 0
+  // Long options can't lose more than 100%; cap to avoid commission rounding artefacts
+  const isAllBuy = pos.legs.every(l => l.action === 'BUY')
+  const pnlPct = isAllBuy ? Math.max(rawPnlPct, -100) : rawPnlPct
   const isClosed = pos.status === 'CLOSED'
 
   // Last-updated staleness
@@ -2395,7 +2401,7 @@ function PositionCard({ pos, onClose, onAI }: {
                 <div style={{ fontWeight: 800, fontFamily: 'var(--mono)', fontSize: '0.8rem' }}>${currPx.toFixed(2)}<span style={{ fontSize: '0.65rem', fontWeight: 400, color: 'var(--text-dim)' }}>/sh</span></div>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>{fmt$(currVal)} value</div>
               </div>
-              <div style={{ background: legPnl > 0 ? '#f0fdf4' : legPnl < 0 ? '#fef2f2' : 'var(--panel-inset)', borderRadius: 5, padding: '6px 8px', border: legPnl !== 0 ? `1px solid ${legPnl > 0 ? '#86efac' : '#fca5a5'}` : undefined }}>
+              <div style={{ background: legPnl > 0 ? 'rgba(34,197,94,0.08)' : legPnl < 0 ? 'rgba(239,68,68,0.08)' : 'var(--panel-inset)', borderRadius: 5, padding: '6px 8px', border: legPnl !== 0 ? `1px solid ${legPnl > 0 ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` : undefined }}>
                 <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 2 }}>
                   {isClosed ? 'Realized P&L' : 'Unrealized P&L'}
                 </div>
@@ -2422,7 +2428,7 @@ function PositionCard({ pos, onClose, onAI }: {
 
       {/* Staleness note */}
       {stale && (
-        <div style={{ fontSize: '0.62rem', color: '#92400e', marginTop: 6 }}>
+        <div style={{ fontSize: '0.62rem', color: '#F59E0B', marginTop: 6 }}>
           ⚠ Prices last updated {staleMin}m ago — click ↻ Refresh in the top bar to update
         </div>
       )}
@@ -2462,7 +2468,7 @@ function PerformanceChart({ curve }: { curve: PerfPoint[] }) {
       <LineChart data={curve} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(5)} />
         <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} width={52} />
-        <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, '']} labelStyle={{ fontSize: 11 }} />
+        <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, '']} labelStyle={{ fontSize: 11 }} contentStyle={{ background: '#0C1A2E', border: '1px solid rgba(255,255,255,0.1)', color: '#CBD5E1' }} />
         <ReferenceLine y={10000} stroke="var(--border)" strokeDasharray="3 3" />
         <Line type="monotone" dataKey="net_liq" stroke="var(--cyan)" strokeWidth={2} dot={false} name="Net Liq" />
         <Line type="monotone" dataKey="realized" stroke="var(--green)" strokeWidth={1.5} dot={false} name="Realized" />
@@ -2596,9 +2602,9 @@ function ScoreboardCard({ board }: { board: Scoreboard | null }) {
         <span style={{
           fontSize: '0.72rem', fontWeight: 800, fontFamily: 'var(--mono)',
           padding: '2px 10px', borderRadius: 20,
-          background: leader === 'tie' ? 'var(--panel-inset)' : isAria ? '#fef3c7' : '#f0fdf4',
-          color: leader === 'tie' ? 'var(--text-dim)' : isAria ? '#92400e' : '#15803d',
-          border: `1px solid ${leader === 'tie' ? 'var(--border)' : isAria ? '#fcd34d' : '#86efac'}`,
+          background: leader === 'tie' ? 'var(--panel-inset)' : isAria ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
+          color: leader === 'tie' ? 'var(--text-dim)' : isAria ? '#F59E0B' : '#22C55E',
+          border: `1px solid ${leader === 'tie' ? 'var(--border)' : isAria ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.3)'}`,
         }}>
           {leader === 'tie' ? 'TIE' : isAria ? `ARIA leads by $${edge}` : `YOU lead by $${edge}`}
         </span>
@@ -2693,9 +2699,9 @@ function AriaPositionCard({ pos, entryAction }: { pos: AriaPosition; entryAction
           </div>
         </div>
         <div style={{
-          background: legPnl > 0 ? '#f0fdf4' : legPnl < 0 ? '#fef2f2' : 'var(--panel-inset)',
+          background: legPnl > 0 ? 'rgba(34,197,94,0.08)' : legPnl < 0 ? 'rgba(239,68,68,0.08)' : 'var(--panel-inset)',
           borderRadius: 5, padding: '6px 8px',
-          border: legPnl !== 0 ? `1px solid ${legPnl > 0 ? '#86efac' : '#fca5a5'}` : undefined,
+          border: legPnl !== 0 ? `1px solid ${legPnl > 0 ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` : undefined,
         }}>
           <div style={{ fontSize: '0.55rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 2 }}>
             {isClosed ? 'Realized P&L' : 'Unrealized P&L'}
@@ -2728,9 +2734,9 @@ function AriaPositionCard({ pos, entryAction }: { pos: AriaPosition; entryAction
 
           {/* Exit conditions */}
           {exitConds.thesis_decay_signals && (
-            <div style={{ marginBottom: 12, background: '#fef2f2', borderRadius: 6, padding: '8px 10px', border: '1px solid #fca5a5' }}>
-              <div style={{ fontSize: '0.62rem', color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 4 }}>Exit if…</div>
-              <div style={{ fontSize: '0.78rem', color: '#7f1d1d', lineHeight: 1.55 }}>{exitConds.thesis_decay_signals}</div>
+            <div style={{ marginBottom: 12, background: 'rgba(239,68,68,0.08)', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(239,68,68,0.3)' }}>
+              <div style={{ fontSize: '0.62rem', color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 4 }}>Exit if…</div>
+              <div style={{ fontSize: '0.78rem', color: '#CBD5E1', lineHeight: 1.55 }}>{exitConds.thesis_decay_signals}</div>
             </div>
           )}
 
@@ -2756,17 +2762,17 @@ function AriaPositionCard({ pos, entryAction }: { pos: AriaPosition; entryAction
 
           {/* Divergence / independent note */}
           {pos.divergence_note && (
-            <div style={{ marginBottom: 12, background: '#fef3c7', borderRadius: 6, padding: '8px 10px', border: '1px solid #fcd34d' }}>
-              <div style={{ fontSize: '0.62rem', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 3 }}>ARIA note</div>
-              <div style={{ fontSize: '0.78rem', color: '#78350f', lineHeight: 1.55 }}>{pos.divergence_note}</div>
+            <div style={{ marginBottom: 12, background: 'rgba(245,158,11,0.08)', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <div style={{ fontSize: '0.62rem', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 3 }}>ARIA note</div>
+              <div style={{ fontSize: '0.78rem', color: '#CBD5E1', lineHeight: 1.55 }}>{pos.divergence_note}</div>
             </div>
           )}
 
           {/* Exit post-mortem */}
           {pos.exit_reasoning && (
-            <div style={{ background: '#f0fdf4', borderRadius: 6, padding: '8px 10px', border: '1px solid #86efac' }}>
-              <div style={{ fontSize: '0.62rem', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 3 }}>Exit post-mortem</div>
-              <div style={{ fontSize: '0.78rem', color: '#166534', lineHeight: 1.55 }}>{pos.exit_reasoning}</div>
+            <div style={{ background: 'rgba(34,197,94,0.08)', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(34,197,94,0.3)' }}>
+              <div style={{ fontSize: '0.62rem', color: '#22C55E', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--mono)', marginBottom: 3 }}>Exit post-mortem</div>
+              <div style={{ fontSize: '0.78rem', color: '#CBD5E1', lineHeight: 1.55 }}>{pos.exit_reasoning}</div>
             </div>
           )}
 
@@ -2782,16 +2788,16 @@ function AriaPositionCard({ pos, entryAction }: { pos: AriaPosition; entryAction
 
 function AriaDecisionLog({ decisions }: { decisions: AriaDecision[] }) {
   const typeConfig: Record<string, { color: string; bg: string; label: string; icon: string }> = {
-    ENTRY:         { color: '#1d4ed8', bg: '#eff6ff', label: 'ENTERED',  icon: '⚡' },
-    PASS:          { color: '#6b7280', bg: '#f9fafb', label: 'PASSED',   icon: '⏭' },
-    HOLD:          { color: '#92400e', bg: '#fffbeb', label: 'HOLDING',  icon: '⏸' },
-    EXIT_PROFIT_TARGET: { color: '#15803d', bg: '#f0fdf4', label: 'PROFIT EXIT', icon: '✅' },
-    EXIT_STOP_LOSS:     { color: '#991b1b', bg: '#fef2f2', label: 'STOP EXIT',   icon: '🛑' },
-    EXIT_AI_EXIT:         { color: '#7c3aed', bg: '#f5f3ff', label: 'AI EXIT',       icon: '🤖' },
-    EXIT_HARD_RULE:       { color: '#92400e', bg: '#fffbeb', label: 'HARD EXIT',     icon: '📅' },
-    INDEPENDENT_ENTRY:    { color: '#0891b2', bg: '#ecfeff', label: 'ARIA ENTERED',  icon: '⚡' },
-    INDEPENDENT_PASS:     { color: '#7c3aed', bg: '#f5f3ff', label: 'ARIA PASSED',   icon: '🧠' },
-    INDEPENDENT_SKIP:     { color: '#4b5563', bg: '#f3f4f6', label: 'ARIA SKIPPED',  icon: '⏩' },
+    ENTRY:         { color: '#3B82F6', bg: 'rgba(59,130,246,0.1)',  label: 'ENTERED',  icon: '⚡' },
+    PASS:          { color: '#64748B', bg: 'rgba(255,255,255,0.04)', label: 'PASSED',   icon: '⏭' },
+    HOLD:          { color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', label: 'HOLDING',  icon: '⏸' },
+    EXIT_PROFIT_TARGET: { color: '#22C55E', bg: 'rgba(34,197,94,0.08)',  label: 'PROFIT EXIT', icon: '✅' },
+    EXIT_STOP_LOSS:     { color: '#EF4444', bg: 'rgba(239,68,68,0.08)',  label: 'STOP EXIT',   icon: '🛑' },
+    EXIT_AI_EXIT:         { color: '#a78bfa', bg: 'rgba(124,58,237,0.1)', label: 'AI EXIT',       icon: '🤖' },
+    EXIT_HARD_RULE:       { color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', label: 'HARD EXIT',     icon: '📅' },
+    INDEPENDENT_ENTRY:    { color: '#06b6d4', bg: 'rgba(6,182,212,0.08)',  label: 'ARIA ENTERED',  icon: '⚡' },
+    INDEPENDENT_PASS:     { color: '#a78bfa', bg: 'rgba(124,58,237,0.1)', label: 'ARIA PASSED',   icon: '🧠' },
+    INDEPENDENT_SKIP:     { color: '#64748B', bg: 'rgba(255,255,255,0.04)', label: 'ARIA SKIPPED',  icon: '⏩' },
   }
 
   return (
@@ -2873,6 +2879,7 @@ function ScannerPanel({ onOpenSetup }: { onOpenSetup: (ticker: string, expiry: s
   const [loading, setLoading]     = useState(true)
   const [scanning, setScanning]   = useState(false)
   const [status, setStatus]       = useState<any>(null)
+  const info = usePageInfo()
 
   const loadSetups = useCallback(async () => {
     try {
@@ -2905,6 +2912,30 @@ function ScannerPanel({ onOpenSetup }: { onOpenSetup: (ticker: string, expiry: s
 
   return (
     <div style={{ display: 'flex', height: '100%', gap: 0 }}>
+      {info.show && (
+        <PageInfoModal
+          title="Options Scanner"
+          subtitle="Daily scan of 48 blue-chip tickers for options opportunities"
+          benefit="Get a pre-filtered shortlist of the highest-conviction options setups every morning, with full IV, skew, and OI analysis — so you know exactly which stocks have the best risk/reward for an options trade today."
+          sections={[
+            { title: 'What the scanner does', body: 'Every trading day at 9:40 AM ET, the scanner analyzes 48 blue-chip tickers (AAPL, MSFT, AMZN, GOOGL, NVDA, etc.) across 5 dimensions: technical trend, implied volatility vs historical volatility, options skew, open interest structure, and ADX trend strength. Only setups with conviction score ≥55 are surfaced.' },
+            { title: 'IV Intelligence — the core signal', body: '', bullets: [
+              'ATM IV (30–45 DTE) — the price the market assigns to uncertainty. Compared to 30-day realized volatility (HV).',
+              'IV/HV Ratio < 0.9 → options are cheap relative to realized moves → buy premium strategies (long calls/puts)',
+              'IV/HV Ratio > 1.15 → options are expensive → sell premium strategies (covered calls, short puts)',
+              'IV Rank 0–100 → where current IV sits vs its 52-week range. High rank = expensive; low rank = cheap.',
+            ]},
+            { title: 'Skew & OI analysis', body: '', bullets: [
+              'Risk Reversal = 25Δ Call IV minus 25Δ Put IV. Negative = put skew (market hedging downside). Positive = call skew (demand for upside).',
+              'Max Pain — strike where most options expire worthless. Price tends to gravitate toward max pain near expiry.',
+              'Call Wall / Put Wall — strike with highest OI concentration. Acts as resistance (calls) or support (puts).',
+            ]},
+            { title: 'Recommended strategies', body: 'The scanner auto-recommends a specific strategy per setup: Long Call/Put (IV cheap, directional), Bull/Bear Call/Put Spread (IV medium), Short Put/Covered Call (IV high). Each recommendation includes the specific strike, expiry, and Greeks.' },
+            { title: 'How to act on a setup', body: 'Click a setup card on the left, review the full analysis in the center panel, then click "→ Open in Chain" to load that ticker\'s live options chain in the Trading tab where you can place a paper trade.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
 
       {/* Left — setup cards */}
       <div style={{ width: 260, borderRight: '1px solid var(--border)', overflowY: 'auto', flexShrink: 0 }}>
@@ -2912,6 +2943,7 @@ function ScannerPanel({ onOpenSetup }: { onOpenSetup: (ticker: string, expiry: s
           <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', flex: 1 }}>
             🔭 Scanner {status?.today_count ? `(${status.today_count})` : ''}
           </span>
+          <InfoButton onClick={info.open} />
           <button className="btn sm" onClick={handleRunScan} disabled={scanning}
             style={{ fontSize: '0.7rem', padding: '3px 8px' }}>
             {scanning ? '⟳ Scanning…' : '↻ Run'}
@@ -3088,12 +3120,12 @@ function ScannerPanel({ onOpenSetup }: { onOpenSetup: (ticker: string, expiry: s
 
           {/* Warnings banner */}
           {selected.warnings && selected.warnings.length > 0 && (
-            <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: '0.68rem', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.68rem', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
                 ⚠ Caution Flags
               </div>
               {selected.warnings.map((w, i) => (
-                <div key={i} style={{ fontSize: '0.75rem', color: '#78350f', lineHeight: 1.5, marginBottom: i < selected.warnings.length - 1 ? 4 : 0 }}>
+                <div key={i} style={{ fontSize: '0.75rem', color: '#CBD5E1', lineHeight: 1.5, marginBottom: i < selected.warnings.length - 1 ? 4 : 0 }}>
                   · {w}
                 </div>
               ))}
@@ -3398,7 +3430,7 @@ export default function OptionsDeskPage() {
   const [ticker, setTicker]             = useState('SPY')
   const [expirations, setExpirations]   = useState<string[]>([])
   const [selectedExpiry, setSelectedExpiry] = useState('')
-  const [chainData, setChainData]       = useState<{ calls: ChainRow[]; puts: ChainRow[]; underlying: number; dte: number; expected_move: number } | null>(null)
+  const [chainData, setChainData]       = useState<{ calls: ChainRow[]; puts: ChainRow[]; underlying: number; dte: number; expected_move: number; quotes_stale?: boolean } | null>(null)
   const [chainLoading, setChainLoading] = useState(false)
 
   // Single-leg builder
@@ -3676,7 +3708,7 @@ export default function OptionsDeskPage() {
         {/* ── LEFT: Chain ── */}
         <div className="opts-left">
           <div className="opts-chain-controls">
-            <input className="input" style={{ width: 86 }} value={ticker}
+            <input className="input" style={{ width: 100 }} value={ticker}
               onChange={e => setTicker(e.target.value.toUpperCase())} placeholder="TICKER"
               onKeyDown={e => { if (e.key === 'Enter') loadExpirations() }} />
             <button className="btn sm" onClick={loadExpirations}>Load</button>
@@ -3698,13 +3730,18 @@ export default function OptionsDeskPage() {
               <span className="mono" style={{ fontWeight: 700 }}>{ticker} @ {fmt$(chainData.underlying)}</span>
               <span>DTE: <strong>{chainData.dte}</strong></span>
               <span style={{ color: 'var(--text-dim)' }}>Expected ±{fmt$(chainData.expected_move)}</span>
-              {marketStatus && !marketStatus.is_open && (
-                <span style={{ color: '#92400e', fontWeight: 700, fontSize: '0.68rem', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>
+              {chainData?.quotes_stale && (
+                <span style={{ color: '#F59E0B', fontWeight: 700, fontSize: '0.68rem', background: 'rgba(245,158,11,0.08)', padding: '1px 6px', borderRadius: 4, border: '1px solid rgba(245,158,11,0.2)' }}>
+                  ⚠ No live bid/ask — showing last traded price · IV back-calculated via Black-Scholes
+                </span>
+              )}
+              {!chainData?.quotes_stale && marketStatus && !marketStatus.is_open && (
+                <span style={{ color: '#F59E0B', fontWeight: 700, fontSize: '0.68rem', background: 'rgba(245,158,11,0.08)', padding: '1px 6px', borderRadius: 4, border: '1px solid rgba(245,158,11,0.2)' }}>
                   ⚠ Stale prices — {marketStatus.is_weekend ? 'market closed (weekend)' : 'market closed'}
                 </span>
               )}
               {marketStatus?.is_open && (
-                <span style={{ color: '#15803d', fontSize: '0.68rem' }}>● Live</span>
+                <span style={{ color: '#22C55E', fontSize: '0.68rem' }}>● Live</span>
               )}
             </div>
           )}
@@ -3735,7 +3772,7 @@ export default function OptionsDeskPage() {
                   {(() => {
                     const liq = getLiquidityScore(selectedRow.row)
                     return (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.65rem', padding: '1px 8px', borderRadius: 12, fontFamily: 'var(--mono)', fontWeight: 700, background: liq === 'good' ? '#f0fdf4' : liq === 'fair' ? '#fffbeb' : '#fef2f2', color: LIQ_DOT[liq], border: `1px solid ${liq === 'good' ? '#86efac' : liq === 'fair' ? '#fcd34d' : '#fca5a5'}` }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.65rem', padding: '1px 8px', borderRadius: 12, fontFamily: 'var(--mono)', fontWeight: 700, background: liq === 'good' ? 'rgba(22,163,74,0.1)' : liq === 'fair' ? 'rgba(245,158,11,0.08)' : 'rgba(239,68,68,0.08)', color: LIQ_DOT[liq], border: `1px solid ${liq === 'good' ? 'rgba(22,163,74,0.3)' : liq === 'fair' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.3)'}` }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: LIQ_DOT[liq], display: 'inline-block' }} />
                         {liq === 'good' ? 'Good liquidity' : liq === 'fair' ? 'Fair liquidity' : 'Poor liquidity'}
                       </span>
@@ -3774,7 +3811,7 @@ export default function OptionsDeskPage() {
               <div className="card-title">Trade Snapshot</div>
               <div style={{ color: 'var(--text-dim)', fontSize: '0.82rem', padding: '8px 0', lineHeight: 1.7 }}>
                 Click any strike in the chain table to get a plain-English breakdown: breakeven price, probability of profit, daily theta drain, spread entry cost, and an IV reading — plus a one-line verdict.<br />
-                <span style={{ fontSize: '0.72rem' }}>Liquidity dots in the chain: <span style={{ color: '#16a34a' }}>●</span> good · <span style={{ color: '#d97706' }}>●</span> fair · <span style={{ color: '#dc2626' }}>●</span> poor</span>
+                <span style={{ fontSize: '0.72rem' }}>Liquidity dots in the chain: <span style={{ color: '#22C55E' }}>●</span> good · <span style={{ color: '#F59E0B' }}>●</span> fair · <span style={{ color: '#EF4444' }}>●</span> poor</span>
               </div>
             </div>
           )}
@@ -3834,9 +3871,9 @@ export default function OptionsDeskPage() {
                           {ticker} ${selectedRow.row.strike} {selectedRow.side.toUpperCase()}
                         </div>
                         <div style={{ fontSize: '0.72rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 12px' }}>
-                          <span>Bid: <strong>{fmtNum(selectedRow.row.bid, 2)}</strong></span>
-                          <span>Ask: <strong>{fmtNum(selectedRow.row.ask, 2)}</strong></span>
-                          <span>IV: <strong>{selectedRow.row.iv.toFixed(1)}%</strong></span>
+                          <span>Bid: <strong>{selectedRow.row.usingLastPrice ? '—' : fmtNum(selectedRow.row.bid, 2)}</strong></span>
+                          <span>Ask: <strong>{selectedRow.row.usingLastPrice ? '—' : fmtNum(selectedRow.row.ask, 2)}</strong></span>
+                          <span>IV: <strong>{selectedRow.row.usingLastPrice ? '—' : `${selectedRow.row.iv.toFixed(1)}%`}</strong></span>
                           <span>Δ: <strong>{fmtNum(selectedRow.row.delta, 3)}</strong></span>
                           <span>θ/day: <strong>{fmtNum(selectedRow.row.theta, 4)}</strong></span>
                           <span>OI: <strong>{selectedRow.row.openInterest.toLocaleString()}</strong></span>
@@ -3862,9 +3899,20 @@ export default function OptionsDeskPage() {
                       </div>
 
                       <div style={{ marginBottom: 8, background: 'var(--panel-inset)', borderRadius: 6, padding: '8px 10px', fontSize: '0.72rem' }}>
-                        <div>Fill price: <strong>{builderAction === 'BUY' ? fmtNum(selectedRow.row.ask, 3) : fmtNum(selectedRow.row.bid, 3)}</strong> (market fill)</div>
-                        <div>Total cost: <strong>{fmt$((builderAction === 'BUY' ? (selectedRow.row.ask ?? 0) : (selectedRow.row.bid ?? 0)) * 100 * builderQty + 0.65 * builderQty)}</strong></div>
-                        <div style={{ color: 'var(--text-dim)' }}>Commission: ${(0.65 * builderQty).toFixed(2)} ($0.65/contract)</div>
+                        {(() => {
+                          const fillPrice = builderAction === 'BUY'
+                            ? (selectedRow.row.ask ?? selectedRow.row.mid ?? selectedRow.row.lastPrice ?? 0)
+                            : (selectedRow.row.bid ?? selectedRow.row.mid ?? selectedRow.row.lastPrice ?? 0)
+                          const usingMid = fillPrice > 0 && selectedRow.row.usingLastPrice
+                          return <>
+                            <div>Fill price: <strong>{fillPrice > 0 ? `$${fillPrice.toFixed(3)}` : '—'}</strong>
+                              {usingMid && <span style={{ color: 'var(--text-dim)', marginLeft: 4, fontSize: '0.65rem' }}>(last traded — no live quote)</span>}
+                              {!usingMid && <span style={{ color: 'var(--text-dim)', marginLeft: 4 }}>(market fill)</span>}
+                            </div>
+                            <div>Total cost: <strong>{fmt$(fillPrice * 100 * builderQty + 0.65 * builderQty)}</strong></div>
+                            <div style={{ color: 'var(--text-dim)' }}>Commission: ${(0.65 * builderQty).toFixed(2)} ($0.65/contract)</div>
+                          </>
+                        })()}
                       </div>
 
                       {openError && <div style={{ color: 'var(--red)', fontSize: '0.75rem', marginBottom: 8 }}>{openError}</div>}

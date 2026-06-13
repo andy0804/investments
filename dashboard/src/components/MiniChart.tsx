@@ -41,12 +41,12 @@ function CustomTooltip({ active, payload, label }: any) {
   const s50    = payload.find((p: any) => p.dataKey === 'sma50')?.value
   return (
     <div style={{
-      background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 6,
+      background: '#0C1A2E', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
       padding: '6px 10px', fontSize: '0.72rem', fontFamily: 'monospace',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
     }}>
-      <div style={{ color: '#6b7280', marginBottom: 2 }}>{label}</div>
-      {close  != null && <div style={{ color: '#111827' }}>Close  <b>${close.toFixed(2)}</b></div>}
+      <div style={{ color: '#64748B', marginBottom: 2 }}>{label}</div>
+      {close  != null && <div style={{ color: '#F1F5F9' }}>Close  <b>${close.toFixed(2)}</b></div>}
       {s20    != null && <div style={{ color: '#d97706' }}>SMA20  <b>${s20.toFixed(2)}</b></div>}
       {s50    != null && <div style={{ color: '#7c3aed' }}>SMA50  <b>${s50.toFixed(2)}</b></div>}
       {volume != null && <div style={{ color: '#9ca3af' }}>Vol    <b>{(volume / 1_000_000).toFixed(2)}M</b></div>}
@@ -124,7 +124,7 @@ export default function MiniChart({ symbol, days = 30, height = 160, entryZone }
 
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={data} margin={{ top: 4, right: 2, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="2 4" stroke="#f1f5f9" vertical={false} strokeOpacity={1} />
+          <CartesianGrid strokeDasharray="2 4" stroke="rgba(255,255,255,0.05)" vertical={false} strokeOpacity={1} />
           <XAxis
             dataKey="label"
             tick={{ fill: '#9ca3af', fontSize: 9, fontFamily: 'monospace' }}
@@ -147,7 +147,7 @@ export default function MiniChart({ symbol, days = 30, height = 160, entryZone }
               yAxisId="price"
               y1={entryZone.low}
               y2={entryZone.high}
-              fill="#dbeafe"
+              fill="rgba(59,130,246,0.15)"
               fillOpacity={0.5}
               stroke="#93c5fd"
               strokeOpacity={0.8}
@@ -155,7 +155,7 @@ export default function MiniChart({ symbol, days = 30, height = 160, entryZone }
             />
           )}
 
-          <Bar yAxisId="vol" dataKey="volume" fill="#e5e7eb" opacity={0.8} radius={[1, 1, 0, 0]} />
+          <Bar yAxisId="vol" dataKey="volume" fill="rgba(255,255,255,0.08)" opacity={0.8} radius={[1, 1, 0, 0]} />
           <Line yAxisId="price" dataKey="sma50" stroke="#7c3aed" strokeWidth={0.75} dot={false} strokeDasharray="4 3" connectNulls strokeOpacity={0.7} />
           <Line yAxisId="price" dataKey="sma20" stroke="#d97706" strokeWidth={0.75} dot={false} connectNulls strokeOpacity={0.8} />
           <Line yAxisId="price" dataKey="close" stroke={lineColor} strokeWidth={1.5} dot={false} activeDot={{ r: 2, fill: lineColor, strokeWidth: 0 }} />

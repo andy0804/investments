@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { runDeepDive, getSavedDeepDives, saveDeepDive } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 import MiniChart from '../components/MiniChart'
 import FundamentalPanel from '../components/FundamentalPanel'
 
@@ -77,6 +78,7 @@ export default function DeepDiveTab() {
   const [saved,   setSaved]   = useState(false)
   const [savedId, setSavedId] = useState<number | null>(null)
   const [showSaved, setShowSaved] = useState(false)
+  const info = usePageInfo()
 
   const handleRun = async (sym?: string) => {
     const s = (sym ?? symbol).trim().toUpperCase()
@@ -123,9 +125,30 @@ export default function DeepDiveTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+      {info.show && (
+        <PageInfoModal
+          title="Deep Dive"
+          subtitle="On-demand full analysis for any ticker"
+          benefit="Get the same institutional-grade analysis the SOTD pipeline uses, but for any stock you choose — not just today's pick."
+          sections={[
+            { title: 'What this page does', body: 'Type any US ticker and the agent runs the full analysis pipeline: downloads 60 days of price history, computes all technical indicators (RSI, MACD, ADX, Bollinger Bands, volume ratio), fetches fundamental data from Finnhub, runs V3 scoring, then calls Claude Haiku for a 6-dimension institutional analysis with entry quality, momentum stage, risk profile, and trade recommendation.' },
+            { title: 'When to use it', body: '', bullets: [
+              'You heard about a stock and want a quick AI-powered verdict before acting',
+              'Today\'s SOTD pick is the same stock repeated — Deep Dive the next-best candidate',
+              'You want to compare a stock against the SOTD pick\'s score breakdown',
+              'Pre-earnings check on a name you already own',
+            ]},
+            { title: 'What you get back', body: 'Entry quality (EARLY/GOOD/MODERATE/LATE), momentum stage, risk profile, allocation suggestion (% of portfolio), invalidation conditions, and a full score breakdown identical to the SOTD scoring. Results are saved and accessible from the history panel at the bottom.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
       {/* Search bar */}
       <div style={S.panel}>
-        <div style={S.sectionHd}>On-Demand Deep Dive Analysis</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={S.sectionHd} >On-Demand Deep Dive Analysis</div>
+          <InfoButton onClick={info.open} />
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"

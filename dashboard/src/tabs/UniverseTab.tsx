@@ -3,6 +3,7 @@ import {
   getFilterPresets, createFilterPreset, activatePreset,
   updateFilterPreset, deleteFilterPreset,
 } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 
 const S: Record<string, React.CSSProperties> = {
   panel:    { background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '16px 18px' },
@@ -119,6 +120,8 @@ export default function UniverseTab() {
   const [editId,   setEditId]   = useState<number | null>(null)
   const [formInit, setFormInit] = useState<typeof EMPTY_FORM>(EMPTY_FORM)
 
+  const info = usePageInfo()
+
   const load = () => {
     setLoading(true)
     getFilterPresets()
@@ -179,6 +182,27 @@ export default function UniverseTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {info.show && (
+        <PageInfoModal
+          title="Universe — Screener Presets"
+          subtitle="Control which stocks the SOTD pipeline considers"
+          benefit="By tuning the universe filters, you control the quality bar for every daily pick — tighter filters mean fewer but higher-quality candidates."
+          sections={[
+            { title: 'What this page does', body: 'Every day, the SOTD pipeline asks FinViz for candidates that match an active preset. A preset defines the minimum price, volume, market cap, and conviction score threshold. Only one preset can be active at a time.' },
+            { title: 'The filters explained', body: '', bullets: [
+              'Min Price — excludes penny stocks and illiquid names',
+              'Min Avg Volume — ensures you can enter/exit without moving the market',
+              'Market Cap — "mid" = $2B+, "large" = $10B+. Larger cap = more institutional coverage',
+              'Conviction Threshold — the minimum V3 score (0–100) a stock must achieve to be recommended. Raising this filters out borderline setups.',
+            ]},
+            { title: 'How to use it', body: 'Create a "Conservative" preset for bear markets (higher thresholds) and an "Aggressive" preset for bull markets (lower thresholds). Activate the right one based on VIX and regime. Changes take effect on the next pipeline run.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -4 }}>
+        <InfoButton onClick={info.open} />
+      </div>
 
       {/* Active preset banner */}
       {active && (

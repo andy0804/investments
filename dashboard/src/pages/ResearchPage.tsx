@@ -3,6 +3,7 @@ import {
   ingestNote, runStockAnalysis, getIntelNotes,
   getAnalysisHistory, deleteIntelNote, getContradictions,
 } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,10 +121,10 @@ function ScoreBar({ label, score, reason }: { label: string; score: number; reas
 
 function VerdictBadge({ verdict }: { verdict: string }) {
   const map: Record<string, { bg: string; color: string; border: string }> = {
-    BUY:   { bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
+    BUY:   { bg: '#f0fdf4', color: '#15803d', border: 'rgba(34,197,94,0.4)' },
     HOLD:  { bg: '#eff6ff', color: '#1d4ed8', border: '#93c5fd' },
-    SELL:  { bg: '#fef2f2', color: '#991b1b', border: '#fca5a5' },
-    WATCH: { bg: '#fffbeb', color: '#b45309', border: '#fcd34d' },
+    SELL:  { bg: '#fef2f2', color: '#991b1b', border: 'rgba(239,68,68,0.4)' },
+    WATCH: { bg: 'rgba(245,158,11,0.1)', color: '#FBBF24', border: 'rgba(245,158,11,0.25)' },
   }
   const s = map[verdict] || map['WATCH']
   return (
@@ -227,7 +228,7 @@ function ScoreCompositionPanel({ result }: { result: AnalysisRun }) {
         </div>
 
         {fb.exact_note_count === 0 && (
-          <div style={{ fontSize: '0.68rem', color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 4, padding: '4px 8px', marginTop: 6 }}>
+          <div style={{ fontSize: '0.68rem', color: '#FBBF24', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 4, padding: '4px 8px', marginTop: 6 }}>
             ⚠ Note coverage is 0 — add research notes to increase this component by up to +2.0 pts
           </div>
         )}
@@ -290,6 +291,7 @@ export default function ResearchPage() {
   const [contradictions, setContradictions] = useState<Contradiction[]>([])
   const [error, setError]           = useState('')
   const [activeTab, setActiveTab]   = useState<'notes' | 'history'>('notes')
+  const info = usePageInfo()
 
   const loadSidebar = useCallback(async (t: string) => {
     const [notesRes, histRes, contraRes] = await Promise.allSettled([
@@ -349,8 +351,34 @@ export default function ResearchPage() {
     <div className="research-shell">
       {/* ── LEFT: Ticker + Ingest ── */}
       <div className="research-left">
+        {info.show && (
+          <PageInfoModal
+            title="Research"
+            subtitle="Your personal AI research notebook for any stock"
+            benefit="Build a private, searchable knowledge base about any stock — then get a single AI-fused score that weighs your own notes alongside hard market data."
+            sections={[
+              { title: 'What this page does', body: 'Research is a two-part tool: a note-taking layer where you log your own observations (earnings calls, news, thesis), and an AI analysis engine that fuses those notes with 7 quantitative dimensions into a single composite score.' },
+              { title: 'Adding notes', body: 'Type a ticker, write your observation, select a source type (own note, news, earnings, analyst call, SEC filing), and click Ingest. Notes are stored permanently and associated with the ticker. The AI reads them during analysis to understand your personal thesis.' },
+              { title: 'The 7-dimension analysis', body: 'When you click "Analyse", the agent scores the stock across:', bullets: [
+                'Technical — price momentum, RSI, MACD, ADX, volume trend',
+                'Macro — VIX regime, sector rotation, market breadth',
+                'Sentiment — news tone, social signals, analyst revisions',
+                'Valuation — PE, revenue growth, margin quality vs sector peers',
+                'Momentum — short and medium-term price momentum quality',
+                'Risk — downside risk, volatility regime, drawdown history',
+                'Catalyst — upcoming events, earnings proximity, sector tailwinds',
+              ]},
+              { title: 'Fusion scoring', body: 'The final composite score blends three inputs: the quantitative sub-scores (weighted 40%), Claude Sonnet\'s LLM reasoning (40%), and evidence strength from your ingested notes (20%). The more notes you add, the stronger the evidence contribution.' },
+              { title: 'Contradictions', body: 'The engine flags when your notes contradict the quantitative data — e.g. you wrote "strong earnings" but valuation metrics are deteriorating. These are surfaced as contradictions so you can investigate before acting.' },
+            ]}
+            onClose={info.close}
+          />
+        )}
         <div className="card" style={{ marginBottom: 12 }}>
-          <div className="card-title">Stock Research</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div className="card-title" style={{ margin: 0 }}>Stock Research</div>
+            <InfoButton onClick={info.open} />
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input
               className="input"
@@ -624,9 +652,9 @@ export default function ResearchPage() {
           {contradictions.length > 0 && (
             <div style={{
               padding: '8px 10px', marginBottom: 12, borderRadius: 6,
-              background: '#fffbeb', border: '1px solid #fcd34d',
+              background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
             }}>
-              <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#b45309', marginBottom: 4, fontFamily: 'var(--mono)' }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#FBBF24', marginBottom: 4, fontFamily: 'var(--mono)' }}>
                 ⚠ THESIS DRIFT DETECTED
               </div>
               {contradictions.map((c, i) => (
@@ -647,7 +675,7 @@ export default function ResearchPage() {
                 padding: '8px 10px', marginBottom: 8,
                 background: 'var(--panel-inset)', borderRadius: 6,
                 border: '1px solid var(--border)',
-                borderLeft: `3px solid ${e.thesis === 'bullish' ? '#86efac' : e.thesis === 'bearish' ? '#fca5a5' : '#fcd34d'}`,
+                borderLeft: `3px solid ${e.thesis === 'bullish' ? 'rgba(34,197,94,0.4)' : e.thesis === 'bearish' ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.4)'}`,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                   <span style={{

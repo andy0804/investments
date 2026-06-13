@@ -288,15 +288,29 @@ async def close_position(db: aiosqlite.Connection, position_id: int, note: str =
             contracts = chain["calls"] if is_call else chain["puts"]
             match = next((c for c in contracts if abs(c["strike"] - strike) < 0.001), None)
             close_action = "SELL" if original_action == "BUY" else "BUY"
-            close_price = simulate_fill(
-                match.get("bid") if match else None,
-                match.get("ask") if match else None,
-                close_action,
-            ) if match else (leg["current_price"] or leg["fill_price"])
+            if match:
+                close_price = simulate_fill(
+                    match.get("bid"), match.get("ask"), close_action,
+                )
+                # bid/ask both zero (yfinance stale) — fall back to mid (lastPrice proxy)
+                if close_price == 0:
+                    mid_fallback = match.get("mid") or 0.0
+                    if mid_fallback > 0:
+                        close_price = mid_fallback
+                    else:
+                        # Last resort: BS price from current underlying + IV estimate
+                        S = chain.get("underlying") or 0
+                        T = _dte_years(expiry)
+                        iv = (match.get("iv") or 30.0) / 100.0
+                        if S > 0 and T > 0:
+                            close_price = bs_price(S, strike, T, RISK_FREE_RATE, iv, is_call)
+            else:
+                close_price = leg["current_price"] or leg["fill_price"]
         except Exception:
             close_price = leg["current_price"] or leg["fill_price"]
 
-        commission = COMMISSION_PER_CONTRACT * quantity
+        # Don't charge commission on an option that closes at $0 (expired worthless)
+        commission = 0.0 if close_price == 0 else COMMISSION_PER_CONTRACT * quantity
         proceeds = close_price * MULTIPLIER * quantity - commission
         total_proceeds += proceeds
         total_commission += commission
@@ -375,7 +389,18 @@ async def revalue_all_positions(db: aiosqlite.Connection) -> dict:
                     iv = (match.get("iv") or 30.0) / 100.0
                     is_call = leg["option_type"] == "call"
                     greeks = bs_greeks(S, leg["strike"], T, RISK_FREE_RATE, iv, is_call)
-                    curr_price = match.get("mid") or match.get("lastPrice") or leg["current_price"]
+
+                    # Prefer BS price over stale lastPrice — BS uses current underlying
+                    # so it correctly captures time decay and price moves, unlike yfinance
+                    # lastPrice which may be days old.
+                    bs_val = bs_price(S, leg["strike"], T, RISK_FREE_RATE, iv, is_call) if T > 0 else None
+                    market_mid = match.get("bid") and match.get("ask") and (match["bid"] + match["ask"]) / 2
+                    if market_mid and market_mid > 0:
+                        curr_price = market_mid          # live bid/ask available — most accurate
+                    elif bs_val and bs_val > 0:
+                        curr_price = bs_val              # BS from current underlying — better than stale lastPrice
+                    else:
+                        curr_price = match.get("lastPrice") or leg["current_price"]
 
                     sign = 1 if leg["action"] == "BUY" else -1
                     unrealized = sign * (curr_price - leg["fill_price"]) * MULTIPLIER * leg["quantity"]

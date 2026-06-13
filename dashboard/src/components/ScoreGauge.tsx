@@ -7,7 +7,7 @@ export default function ScoreGauge({ score, size = 110 }: ScoreGaugeProps) {
   const cx = 50, cy = 56, r = 42
 
   const color   = score >= 85 ? '#16a34a' : score >= 75 ? '#2563eb' : score >= 65 ? '#d97706' : '#9ca3af'
-  const trackBg = '#f1f5f9'
+  const trackBg = 'rgba(255,255,255,0.07)'
 
   const toRad = (deg: number) => (deg * Math.PI) / 180
 

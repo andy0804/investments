@@ -128,12 +128,12 @@ function MiniBarChart({
         <BarChart data={data} barSize={14} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
           <XAxis dataKey="x" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
           <YAxis hide domain={['auto', 'auto']} />
-          {!allPos && !allNeg && <ReferenceLine y={0} stroke="#e5e7eb" strokeWidth={1} />}
+          {!allPos && !allNeg && <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeWidth={1} />}
           <Tooltip
-            contentStyle={{ background: '#ffffff', border: '1px solid #e5e7eb', fontSize: '0.75rem', borderRadius: 6, padding: '6px 10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-            labelStyle={{ color: '#374151', fontWeight: 600, marginBottom: 3 }}
-            itemStyle={{ color: '#16a34a' }}
-            cursor={{ fill: 'rgba(0,0,0,0.03)' }}
+            contentStyle={{ background: '#0C1A2E', border: '1px solid rgba(255,255,255,0.1)', fontSize: '0.75rem', borderRadius: 6, padding: '6px 10px', boxShadow: '0 4px 16px rgba(0,0,0,0.5)' }}
+            labelStyle={{ color: '#F1F5F9', fontWeight: 600, marginBottom: 3 }}
+            itemStyle={{ color: '#22C55E' }}
+            cursor={{ fill: 'rgba(255,255,255,0.03)' }}
             formatter={(v: number) => [formatter(v), '']}
           />
           <Bar dataKey="v" radius={[2, 2, 0, 0]}>
@@ -154,8 +154,8 @@ function ErrorPanel({ errors }: { errors: string[] }) {
   if (!errors.length) return null
   return (
     <div style={{
-      border: '1px solid #fcd34d', borderRadius: 6, marginBottom: 14,
-      background: '#fffbeb',
+      border: '1px solid var(--warn-border, #fcd34d)', borderRadius: 6, marginBottom: 14,
+      background: 'var(--warn-bg, #fffbeb)',
     }}>
       <button
         onClick={() => setOpen(o => !o)}

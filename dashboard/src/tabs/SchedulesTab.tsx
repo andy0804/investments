@@ -4,6 +4,7 @@ import {
   createSchedule, updateSchedule, setScheduleTelegram,
   restartDaemon,
 } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 
 const S: Record<string, React.CSSProperties> = {
   panel:    { background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '14px 16px' },
@@ -303,6 +304,7 @@ export default function SchedulesTab() {
   const [editTarget,   setEditTarget]   = useState<any>(null)
   const [restarting,   setRestarting]   = useState(false)
   const [restartMsg,   setRestartMsg]   = useState<string | null>(null)
+  const info = usePageInfo()
 
   const load = () => {
     setLoading(true)
@@ -354,6 +356,28 @@ export default function SchedulesTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {info.show && (
+        <PageInfoModal
+          title="Schedules"
+          subtitle="Cron jobs that keep the agent running 24/7"
+          benefit="See exactly when every job fires and manually trigger any job on demand — so you always know the data is fresh."
+          sections={[
+            { title: 'What this page shows', body: 'Every automated job the agent runs: SOTD pipeline, market data sync, GDELT geopolitical events, RSS news, portfolio CSV sync, health monitoring, and Telegram alerts. Each shows when it last ran, its cron schedule, and whether Telegram delivery is enabled.' },
+            { title: 'Key jobs and their cadence', body: '', bullets: [
+              'SOTD Pipeline — 7:30 AM daily (Mon–Fri) + 3 intraday refreshes',
+              'Finnhub Market Data — every 30–60 minutes during market hours',
+              'GDELT Events — every 3 hours (geopolitical risk signals)',
+              'Portfolio CSV — every 30 minutes',
+              'Health Monitor — every 15 minutes',
+            ]},
+            { title: 'Manual triggers', body: 'Click "▶ Run Now" on any job to fire it immediately regardless of its cron schedule. Useful when you want fresh data outside normal hours, or to test that a job is working after a code change.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+        <InfoButton onClick={info.open} />
+      </div>
       {showBuilder && (
         <BuilderModal onClose={() => setShowBuilder(false)} onCreated={load} />
       )}

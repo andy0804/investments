@@ -369,7 +369,7 @@ export default function DailyDecisionLogTab() {
                 )}
 
                 {s.pick_recap.worst_pick && (
-                  <div style={{ background: '#fff1f2', border: '1px solid #fca5a5', borderRadius: 7, padding: '12px 16px', minWidth: 140 }}>
+                  <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 7, padding: '12px 16px', minWidth: 140 }}>
                     <div style={{ fontSize: '0.6rem', color: '#dc2626', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Worst Pick</div>
                     <div style={{ fontFamily: 'var(--mono)', fontWeight: 900, fontSize: '1rem', color: '#b91c1c' }}>
                       {s.pick_recap.worst_pick.ticker}
@@ -509,8 +509,8 @@ export default function DailyDecisionLogTab() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {s.job_health.map((j, i) => (
                   <div key={i} style={{
-                    background: j.error > 0 ? '#fff1f2' : 'var(--panel-inset)',
-                    border: `1px solid ${j.error > 0 ? '#fca5a5' : 'var(--border)'}`,
+                    background: j.error > 0 ? 'rgba(239,68,68,0.1)' : 'var(--panel-inset)',
+                    border: `1px solid ${j.error > 0 ? 'rgba(239,68,68,0.3)' : 'var(--border)'}`,
                     borderRadius: 5, padding: '6px 10px', fontSize: '0.72rem',
                   }}>
                     <span style={{ fontFamily: 'var(--mono)', color: 'var(--text-bright)' }}>{j.job}</span>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getPortfolioIntelligence } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 
 const S: Record<string, React.CSSProperties> = {
   panel:     { background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '14px 16px' },
@@ -67,6 +68,7 @@ export default function PortfolioIntelligenceTab() {
   useEffect(() => { load() }, [])
 
   const handleRefresh = () => { setRefresh(true); load(); setTimeout(() => setRefresh(false), 3000) }
+  const info = usePageInfo()
 
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300, gap: 12 }}>
@@ -102,11 +104,25 @@ export default function PortfolioIntelligenceTab() {
 
   return (
     <div>
+      {info.show && (
+        <PageInfoModal
+          title="Portfolio Intelligence"
+          subtitle="AI-powered analysis of your Fidelity holdings"
+          benefit="Get an objective, AI-generated view of your portfolio's risk, sector concentration, and regime alignment — without logging into your broker."
+          sections={[
+            { title: 'What this page shows', body: 'Your current Fidelity holdings (loaded via portfolio CSV) are analyzed by Claude Haiku. It evaluates sector concentration, identifies concentration risks (any position >8% of portfolio), scores each position against the current market regime, and calculates performance attribution.' },
+            { title: 'Regime alignment', body: 'Each holding is checked against the current regime (BULL/CHOP/BEAR). A tech-heavy portfolio in a BEAR regime has elevated risk. The agent flags mismatches and suggests whether to hold, reduce, or hedge.' },
+            { title: 'How to keep it current', body: 'Click "↻ Refresh" to re-run the analysis. Portfolio data updates automatically from the CSV every 30 minutes. For live Fidelity sync you would connect via SnapTrade in the Settings page.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
       {/* Top action row */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, gap: 8, alignItems: 'center' }}>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontFamily: 'var(--mono)' }}>
           {data.generated_at ? `Generated ${data.generated_at.slice(0, 16).replace('T', ' ')} UTC` : ''}
         </span>
+        <InfoButton onClick={info.open} />
         <button className="btn sm" onClick={handleRefresh} disabled={refresh}>
           {refresh ? 'Refreshing…' : '↻ Refresh'}
         </button>

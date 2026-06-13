@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getConfig, putConfig, getDaemonStatus, startDaemon, stopDaemon, restartDaemon } from '../api'
+import { PageInfoModal, InfoButton, usePageInfo } from '../components/PageInfoModal'
 
 interface ConfigItem {
   key: string
@@ -165,6 +166,8 @@ export default function ConfigTab() {
 
   useEffect(() => { load() }, [])
 
+  const info = usePageInfo()
+
   const handleSave = async (updates: Record<string, string>) => {
     await putConfig(updates).catch(() => {})
   }
@@ -175,6 +178,23 @@ export default function ConfigTab() {
 
   return (
     <div>
+      {info.show && (
+        <PageInfoModal
+          title="Settings & Configuration"
+          subtitle="Tune the agent's risk rules, position limits, and notifications"
+          benefit="Adjust the agent's behavior to match your risk tolerance and investment style without touching any code."
+          sections={[
+            { title: 'Risk Thresholds', body: 'Hard stop at -8% from purchase price triggers an immediate alert. Soft review at -5%. Target alerts at +10% and +18%. These are applied to every position the agent recommends — change them here to match your personal risk appetite.' },
+            { title: 'Position Limits', body: 'Max single position (default 8% of portfolio) prevents over-concentration in any one stock. Max sector concentration (default 35%) prevents over-exposure to any one sector like tech or energy. The pipeline respects these limits when sizing recommendations.' },
+            { title: 'Budget', body: 'Controls your daily Anthropic API cost target. The agent routes routine scans to Haiku (~$0.003/run) and deeper analysis to Sonnet. Raising the budget allows more frequent Sonnet calls; lowering it keeps everything on Haiku.' },
+            { title: 'Notifications', body: 'Telegram bot token and chat ID control where alerts are delivered. Max daily messages (default 8) prevents alert fatigue. Emergency stops and target hits always fire regardless of the daily limit.' },
+          ]}
+          onClose={info.close}
+        />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <InfoButton onClick={info.open} />
+      </div>
       <DaemonPanel />
 
       <div className="card" style={{ background: '#12121e', border: '1px solid #2a2a3a', marginBottom: 8 }}>
