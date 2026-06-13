@@ -132,17 +132,28 @@ fi
 source "$PROJ/venv/bin/activate"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEP 4 — Python dependencies
+# STEP 4 — Python dependencies  (uv if available, pip fallback)
 # ─────────────────────────────────────────────────────────────────────────────
 hdr "Installing Python dependencies..."
 
 REQ="$PROJ/requirements.txt"
 SENTINEL="$PROJ/venv/.deps_installed"
 
+# Prefer uv (10-100× faster than pip). Install it if not present.
+if ! command -v uv &>/dev/null; then
+  warn "uv not found — installing uv for faster dependency management..."
+  pip install --quiet uv
+fi
+
 if [ ! -f "$SENTINEL" ] || [ "$REQ" -nt "$SENTINEL" ]; then
-  warn "Installing packages from requirements.txt (first time ~90s)..."
-  pip install --quiet --upgrade pip
-  pip install --quiet -r "$REQ"
+  if command -v uv &>/dev/null; then
+    warn "Installing packages via uv (first time ~15s)..."
+    uv pip install --quiet -r "$REQ"
+  else
+    warn "Installing packages via pip (first time ~90s)..."
+    pip install --quiet --upgrade pip
+    pip install --quiet -r "$REQ"
+  fi
   touch "$SENTINEL"
   ok "Python packages installed"
 else
@@ -191,13 +202,17 @@ fi
 hdr "Initialising database..."
 
 cd "$PROJ"
-python3 - <<'PYEOF'
+# Pass PROJ explicitly so the inline script can find .env regardless of
+# working directory or call-stack frame (avoids find_dotenv() AssertionError)
+PROJ_PATH="$PROJ" python3 - <<'PYEOF'
 import asyncio, sys, os
-sys.path.insert(0, os.getcwd())
 
-# Load .env before importing anything
+proj = os.environ["PROJ_PATH"]
+sys.path.insert(0, proj)
+
+# Explicit path avoids find_dotenv() frame-inspection bug in inline scripts
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(proj, ".env"))
 
 from app.db.schema import init_db
 asyncio.run(init_db())
