@@ -365,6 +365,26 @@ def create_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(job_options_scan, CronTrigger(hour=9, minute=40, day_of_week="mon-fri", timezone=ET),
                       id="options_scan", replace_existing=True)
 
+    # Alpha Agent — event scan every 5 min during market hours
+    scheduler.add_job(_job_alpha_agent_scan, IntervalTrigger(minutes=5), id="alpha_agent_scan",
+                      replace_existing=True, misfire_grace_time=60)
+
+    # Alpha Agent — position monitor every 30 min
+    scheduler.add_job(_job_alpha_agent_monitor, IntervalTrigger(minutes=30), id="alpha_agent_monitor",
+                      replace_existing=True, misfire_grace_time=120)
+
+    # Alpha Agent — weekly review Sunday 9:00 PM ET
+    scheduler.add_job(_job_alpha_weekly_review, CronTrigger(day_of_week="sun", hour=21, minute=0, timezone=ET),
+                      id="alpha_weekly_review", replace_existing=True)
+
+    # Alpha Agent — universe screen daily 6:45 AM ET (before market open)
+    scheduler.add_job(_job_alpha_universe_screen, CronTrigger(hour=6, minute=45, day_of_week="mon-fri", timezone=ET),
+                      id="alpha_universe_screen", replace_existing=True)
+
+    # Alpha Agent — auto-age stale watchlist tickers daily 6:50 AM ET
+    scheduler.add_job(_job_alpha_auto_age, CronTrigger(hour=6, minute=50, day_of_week="mon-fri", timezone=ET),
+                      id="alpha_auto_age", replace_existing=True)
+
     return scheduler
 
 
@@ -473,3 +493,64 @@ async def _job_health_check():
     failed = [k for k, v in results.items() if v != "ok"]
     if failed:
         logger.warning("health_check: degraded APIs: %s", failed)
+
+
+async def _job_alpha_agent_scan():
+    """Alpha Agent event detection — runs every 5 min, gated to market hours + ON state."""
+    from app.analysis.alpha_agent.engine import is_on
+    from app.analysis.alpha_agent.event_detector import scan_watchlist
+    if not _is_market_hours():
+        return
+    if not await is_on():
+        return
+    try:
+        events = await scan_watchlist()
+        if events:
+            logger.info("alpha_agent_scan: %d events detected", len(events))
+    except Exception as e:
+        logger.error("alpha_agent_scan failed: %s", e)
+
+
+async def _job_alpha_agent_monitor():
+    """Alpha Agent position monitor — checks stops/targets every 30 min."""
+    from app.analysis.alpha_agent.engine import is_on, monitor_open_positions
+    if not await is_on():
+        return
+    try:
+        triggered = await monitor_open_positions()
+        if triggered:
+            logger.info("alpha_agent_monitor: %d position alerts", len(triggered))
+    except Exception as e:
+        logger.error("alpha_agent_monitor failed: %s", e)
+
+
+async def _job_alpha_weekly_review():
+    """Alpha Agent weekly review — Sunday 9 PM ET."""
+    from app.analysis.alpha_agent.weekly_review import run_weekly_review
+    try:
+        result = await run_weekly_review()
+        if result:
+            logger.info("alpha_weekly_review: alpha=%+.2f%%", result.get("alpha", 0))
+    except Exception as e:
+        logger.error("alpha_weekly_review failed: %s", e)
+
+
+async def _job_alpha_universe_screen():
+    """Screen S&P 500 daily and refresh the universe tier of the watchlist."""
+    from app.analysis.alpha_agent.watchlist import screen_universe
+    try:
+        count = await screen_universe()
+        logger.info("alpha_universe_screen: %d tickers in universe", count)
+    except Exception as e:
+        logger.error("alpha_universe_screen failed: %s", e)
+
+
+async def _job_alpha_auto_age():
+    """Demote stale watchlist-tier tickers back to universe daily."""
+    from app.analysis.alpha_agent.watchlist import auto_age_watchlist
+    try:
+        demoted = await auto_age_watchlist()
+        if demoted:
+            logger.info("alpha_auto_age: demoted %d tickers to universe tier", demoted)
+    except Exception as e:
+        logger.error("alpha_auto_age failed: %s", e)

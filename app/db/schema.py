@@ -719,6 +719,181 @@ CREATE TABLE IF NOT EXISTS options_scanner_cache (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(scan_date, ticker)
 );
+
+-- ── Alpha Agent V4 ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS alpha_agent_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_portfolio (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    cash REAL NOT NULL DEFAULT 10000.0,
+    initial_capital REAL NOT NULL DEFAULT 10000.0,
+    total_value REAL NOT NULL DEFAULT 10000.0,
+    is_on INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'LONG',
+    size_pct REAL NOT NULL,
+    shares REAL NOT NULL DEFAULT 0,
+    entry_price REAL NOT NULL,
+    current_price REAL,
+    stop_price REAL,
+    target_price REAL,
+    time_stop_days INTEGER,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    open_date TEXT NOT NULL,
+    close_date TEXT,
+    close_price REAL,
+    realized_pnl REAL,
+    unrealized_pnl REAL DEFAULT 0.0,
+    conviction INTEGER DEFAULT 70,
+    run_id INTEGER REFERENCES alpha_agent_runs(id),
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'active',
+    agent_notes TEXT,
+    last_evaluated TEXT,
+    added_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT,
+    event_type TEXT NOT NULL,
+    event_data_json TEXT,
+    significance_score INTEGER DEFAULT 0,
+    triggered_committee INTEGER NOT NULL DEFAULT 0,
+    run_id INTEGER,
+    detected_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    trigger_event_id INTEGER REFERENCES alpha_agent_events(id),
+    status TEXT NOT NULL DEFAULT 'RUNNING',
+    research_json TEXT,
+    bull_json TEXT,
+    bear_json TEXT,
+    risk_json TEXT,
+    decision_json TEXT,
+    final_action TEXT,
+    final_confidence INTEGER,
+    approval_status TEXT NOT NULL DEFAULT 'PENDING',
+    approved_at TEXT,
+    rejected_at TEXT,
+    rejection_reason TEXT,
+    position_id INTEGER REFERENCES alpha_agent_positions(id),
+    started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_timeline_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES alpha_agent_runs(id),
+    stage TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT,
+    confidence INTEGER,
+    data_json TEXT,
+    event_time TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_trade_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER NOT NULL REFERENCES alpha_agent_positions(id),
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    entry_date TEXT NOT NULL,
+    close_date TEXT,
+    entry_price REAL,
+    close_price REAL,
+    realized_pnl REAL,
+    pnl_pct REAL,
+    holding_days INTEGER,
+    entry_thesis TEXT,
+    what_went_right TEXT,
+    what_went_wrong TEXT,
+    best_alternative_ticker TEXT,
+    best_alternative_return REAL,
+    counterfactual_lesson TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_lessons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_text TEXT NOT NULL,
+    evidence TEXT,
+    source_position_id INTEGER REFERENCES alpha_agent_positions(id),
+    category TEXT DEFAULT 'general',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    applied_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    approved_at TEXT,
+    dismissed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_strategy_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_start TEXT NOT NULL,
+    portfolio_return_pct REAL,
+    spy_return_pct REAL,
+    alpha_pct REAL,
+    win_rate REAL,
+    avg_winner_pct REAL,
+    avg_loser_pct REAL,
+    trades_count INTEGER DEFAULT 0,
+    open_positions INTEGER DEFAULT 0,
+    regime TEXT,
+    llm_analysis TEXT,
+    parameter_changes_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER REFERENCES alpha_agent_runs(id),
+    stage TEXT NOT NULL,
+    model TEXT NOT NULL,
+    tokens_in INTEGER DEFAULT 0,
+    tokens_out INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_config_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_type TEXT NOT NULL,
+    trigger_description TEXT NOT NULL,
+    proposed_changes_json TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    ticker TEXT,
+    level TEXT NOT NULL DEFAULT 'info',
+    metadata_json TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 CONFIG_DEFAULTS = [
@@ -756,6 +931,96 @@ async def init_db():
                 "INSERT OR IGNORE INTO agent_config (key, value, value_type, label, group_name) VALUES (?,?,?,?,?)",
                 (key, value, vtype, label, group),
             )
+
+        # Alpha Agent — ensure singleton portfolio row exists
+        await db.execute(
+            "INSERT OR IGNORE INTO alpha_agent_portfolio (id, cash, initial_capital, total_value, is_on) "
+            "VALUES (1, 10000.0, 10000.0, 10000.0, 0)"
+        )
+        # Default alpha agent config
+        alpha_defaults = [
+            # Core
+            ("is_on",                        "0"),
+            ("starting_capital",             "10000.0"),
+            ("model",                        "claude-haiku-4-5-20251001"),
+            # Position sizing (conviction-weighted)
+            ("min_position_pct",             "3.0"),   # low conviction
+            ("med_position_pct",             "7.0"),   # medium conviction
+            ("max_position_pct",             "12.0"),  # high conviction
+            # Portfolio-level deployment
+            ("cash_floor_pct",               "25.0"),  # always keep 25% cash
+            ("max_deployed_pct",             "75.0"),  # max 75% invested
+            # Stop / exit rules
+            ("hard_stop_pct",                "8.0"),   # -8% default (tightens in CAUTION/CRISIS)
+            ("default_take_profit_pct",      "18.0"),
+            ("time_stop_days",               "21"),    # exit if no move in 3 weeks
+            # Entry quality gate
+            ("min_confidence_to_trade",      "55"),    # minimum bull confidence to open
+            ("significance_min_score",       "60"),    # event significance threshold
+            ("event_price_threshold_pct",    "2.0"),
+            ("event_volume_threshold",       "2.0"),
+            # Regime gates (VIX-based)
+            ("regime_gate_enabled",          "1"),
+            # Regime: BULL (VIX < 15)
+            ("bull_max_deployed_pct",        "75.0"),
+            ("bull_hard_stop_pct",           "10.0"),
+            # Regime: NORMAL (VIX 15-25)
+            ("normal_max_deployed_pct",      "60.0"),
+            ("normal_hard_stop_pct",         "8.0"),
+            # Regime: CAUTION (VIX 25-35)
+            ("caution_max_deployed_pct",     "35.0"),
+            ("caution_hard_stop_pct",        "6.0"),
+            # Regime: CRISIS (VIX > 35)
+            ("crisis_max_deployed_pct",      "10.0"),
+            ("crisis_hard_stop_pct",         "5.0"),
+            # Self-correction triggers
+            ("self_correct_enabled",         "1"),
+            ("self_correct_consec_stops",    "3"),     # consecutive stop-exits → propose change
+            ("self_correct_min_win_rate",    "40"),    # % — below this over 15+ trades → propose
+            ("self_correct_rr_threshold",    "1.5"),   # avg_loss > 1.5× avg_win → propose
+            ("self_correct_max_drawdown",    "15"),    # % drawdown from peak → force pause
+        ]
+        for k, v in alpha_defaults:
+            await db.execute(
+                "INSERT OR IGNORE INTO alpha_agent_config (key, value) VALUES (?, ?)", (k, v)
+            )
+        await db.commit()
+        logger.info("init_db: complete")
+
+        # Migrate alpha_agent_watchlist: add tier + promoted_at columns
+        async with db.execute("PRAGMA table_info(alpha_agent_watchlist)") as cur:
+            wl_cols = {row[1] for row in await cur.fetchall()}
+        if "tier" not in wl_cols:
+            await db.execute(
+                "ALTER TABLE alpha_agent_watchlist ADD COLUMN tier TEXT NOT NULL DEFAULT 'watchlist'"
+            )
+            # All existing rows are user-added — classify as 'watchlist'
+            await db.execute(
+                "UPDATE alpha_agent_watchlist SET tier='manual' WHERE source='manual'"
+            )
+            await db.execute(
+                "UPDATE alpha_agent_watchlist SET tier='watchlist' WHERE source IN ('seed','sotd','sotd_history','discovery')"
+            )
+        if "promoted_at" not in wl_cols:
+            await db.execute(
+                "ALTER TABLE alpha_agent_watchlist ADD COLUMN promoted_at TEXT"
+            )
+        await db.commit()
+
+        # Universe screener config defaults
+        universe_defaults = [
+            ("universe_enabled",          "1"),
+            ("universe_min_market_cap_b", "5"),     # $5B+ market cap
+            ("universe_min_volume_m",     "1"),      # 1M+ avg daily volume
+            ("universe_price_threshold",  "3.0"),   # % move to auto-promote to watchlist tier
+            ("universe_volume_threshold", "3.0"),   # volume ratio to auto-promote
+            ("watchlist_auto_age_days",   "30"),    # days of no action before demoting to universe
+        ]
+        for k, v in universe_defaults:
+            await db.execute(
+                "INSERT OR IGNORE INTO alpha_agent_config (key, value) VALUES (?, ?)", (k, v)
+            )
+        await db.commit()
 
         # Migrate schedules: add telegram_enabled if missing
         async with db.execute("PRAGMA table_info(schedules)") as cur:

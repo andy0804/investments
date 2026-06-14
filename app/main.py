@@ -41,6 +41,7 @@ from app.performance.health_monitor import check_all_apis
 from app.routers.options import router as options_router
 from app.routers.live_portfolio import router as live_portfolio_router
 from app.routers.options_scanner import router as options_scanner_router
+from app.routers.alpha_agent import router as alpha_agent_router
 
 import os as _os
 
@@ -89,6 +90,7 @@ app.add_middleware(
 app.include_router(options_router)
 app.include_router(live_portfolio_router)
 app.include_router(options_scanner_router)
+app.include_router(alpha_agent_router)
 
 
 @app.get("/health")

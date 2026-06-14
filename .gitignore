@@ -1,98 +1,39 @@
+# Environment
 .env
 venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+
+# Claude
 .claude/
-app/__pycache__/__init__.cpython-312.pyc
-.gitignore
-app/__pycache__/__init__.cpython-313.pyc
-app/__pycache__/config.cpython-313.pyc
-app/__pycache__/main.cpython-312.pyc
-app/__pycache__/main.cpython-313.pyc
-workspace setup.md
+
+# Database
+investment_agent.db
+
+# Logs
+logs/
+
+# Docs / local notes
 Work.md
-UI-GUIDLELINES.md
-SOTD-LOGIC.md
+CLAUDE.md
 skills.md
 setup.md
-Portfolio_Positions_Apr-18-2026.csv
-Portfolio_Positions_Apr-18-2026-2.csv
+UI-GUIDLELINES.md
+SOTD-LOGIC.md
+"FUTURE WORK.md"
+"FULL SYSTEM REVAMP.md"
+"NEW AI AGENT V2 PLAN.MD"
+"NEW AI AGENT V2.md"
+DEPLOYMENT_TO_ORACLE.md
 output-1.md
-investment_agent.db
-FUTURE WORK.md
-FULL SYSTEM REVAMP.md
-CLAUDE.md
-app/analysis/__pycache__/__init__.cpython-312.pyc
-app/analysis/__pycache__/__init__.cpython-313.pyc
-app/analysis/__pycache__/claude_engine.cpython-313.pyc
-app/analysis/__pycache__/events.cpython-313.pyc
-app/analysis/__pycache__/filter_presets.cpython-313.pyc
-app/analysis/__pycache__/fundamental_engine.cpython-313.pyc
-app/analysis/__pycache__/fundamentals.cpython-313.pyc
-app/analysis/__pycache__/macro.cpython-313.pyc
-app/analysis/__pycache__/orchestrator.cpython-313.pyc
-app/analysis/__pycache__/portfolio_intelligence.cpython-313.pyc
-app/analysis/__pycache__/preemptive_engine.cpython-313.pyc
-app/analysis/__pycache__/risk.cpython-313.pyc
-app/analysis/__pycache__/screener.cpython-313.pyc
-app/analysis/__pycache__/sector_rotation.cpython-313.pyc
-app/analysis/__pycache__/sotd_engine.cpython-312.pyc
-app/analysis/__pycache__/sotd_engine.cpython-313.pyc
-app/analysis/__pycache__/stock_intelligence.cpython-313.pyc
-app/analysis/__pycache__/technicals.cpython-313.pyc
-app/analysis/__pycache__/top_performers.cpython-313.pyc
-app/analysis/__pycache__/virtual_engine.cpython-313.pyc
-.gitignore
-tests/__pycache__/test_endpoints.cpython-313-pytest-9.0.3.pyc
-tests/__pycache__/test_connectors.cpython-313-pytest-9.0.3.pyc
-tests/__pycache__/__init__.cpython-313.pyc
-logs/frontend.pid
-logs/frontend.log
-logs/daemon.log
-logs/daemon.err
-logs/backend.pid
-logs/backend.log
-logs/agent.log
-app/simulator/__pycache__/universe.cpython-313.pyc
-app/simulator/__pycache__/metrics.cpython-313.pyc
-app/simulator/__pycache__/market_engine.cpython-313.pyc
-app/simulator/__pycache__/job_runner.cpython-313.pyc
-app/simulator/__pycache__/backtest_engine.cpython-313.pyc
-app/simulator/__pycache__/__init__.cpython-313.pyc
-app/scheduler/__pycache__/manager.cpython-313.pyc
-app/scheduler/__pycache__/jobs.cpython-313.pyc
-app/scheduler/__pycache__/__init__.cpython-313.pyc
-app/prompts/__pycache__/ytd_coach.cpython-313.pyc
-app/prompts/__pycache__/signal_alert.cpython-313.pyc
-app/prompts/__pycache__/morning_brief.cpython-313.pyc
-app/prompts/__pycache__/earnings_prep.cpython-313.pyc
-app/prompts/__pycache__/deep_dive.cpython-313.pyc
-app/prompts/__pycache__/__init__.cpython-313.pyc
-app/performance/__pycache__/strategy_comparison.cpython-313.pyc
-app/performance/__pycache__/signal_tracker.cpython-313.pyc
-app/performance/__pycache__/signal_event_tracker.cpython-313.pyc
-app/performance/__pycache__/roi_tracker.cpython-313.pyc
-app/performance/__pycache__/health_monitor.cpython-313.pyc
-app/performance/__pycache__/attribution.cpython-313.pyc
-app/performance/__pycache__/best_bet.cpython-313.pyc
-app/performance/__pycache__/__init__.cpython-313.pyc
-app/notifications/__pycache__/telegram_bot.cpython-313.pyc
-app/notifications/__pycache__/formatters.cpython-313.pyc
-app/notifications/__pycache__/__init__.cpython-313.pyc
-app/db/__pycache__/schema.cpython-313.pyc
-app/db/__pycache__/__init__.cpython-313.pyc
-app/connectors/__pycache__/rss.cpython-313.pyc
-app/connectors/__pycache__/portfolio_csv.cpython-313.pyc
-app/connectors/__pycache__/gdelt.cpython-313.pyc
-app/connectors/__pycache__/fundamentals.cpython-313.pyc
-app/connectors/__pycache__/fred.cpython-313.pyc
-app/connectors/__pycache__/fmp.cpython-313.pyc
-app/connectors/__pycache__/finnhub.cpython-313.pyc
-app/connectors/__pycache__/edgar.cpython-313.pyc
-app/connectors/__pycache__/__init__.cpython-313.pyc
-app/analysis/__pycache__/options_simulator.cpython-313.pyc
-app/analysis/__pycache__/options_scanner.cpython-313.pyc
-app/analysis/__pycache__/options_engine.cpython-313.pyc
-app/analysis/__pycache__/aria_agent.cpython-313.pyc
-app/routers/__pycache__/__init__.cpython-313.pyc
-app/routers/__pycache__/live_portfolio.cpython-313.pyc
-app/routers/__pycache__/options_scanner.cpython-313.pyc
-app/routers/__pycache__/options.cpython-313.pyc
+"workspace setup.md"
+
+# Portfolio CSVs
+*.csv
+
+# OS
+.DS_Store
