@@ -1051,6 +1051,157 @@ async def run_sotd_pipeline(force_refresh: bool = False, emit=None) -> dict:
     return full_result
 
 
+async def run_sotd_for_ticker(ticker: str, emit=None) -> dict:
+    """Run the full SOTD analysis for a single specific ticker (bypasses FinViz screener)."""
+    async def _emit(event: dict):
+        if emit:
+            try:
+                await emit(event)
+            except Exception:
+                pass
+
+    ticker = ticker.upper().strip()
+    generated_at = datetime.now(UTC).isoformat()
+    today = date.today().isoformat()
+
+    await _emit({"step": "screener", "status": "running", "msg": f"Looking up {ticker}…"})
+
+    def _get_info():
+        try:
+            info = yf.Ticker(ticker).info
+            return {"sector": info.get("sector", "Unknown"), "company": info.get("longName", ticker)}
+        except Exception:
+            return {"sector": "Unknown", "company": ticker}
+
+    info = await asyncio.to_thread(_get_info)
+    await _emit({"step": "screener", "status": "done", "msg": f"{ticker} · {info['sector']}", "count": 1})
+
+    await _emit({"step": "market_data", "status": "running",
+                 "msg": f"Downloading 60d OHLCV for {ticker} + SPY + VIX + 11 sectors…"})
+    try:
+        mdata = await asyncio.to_thread(_fetch_market_data, [ticker])
+    except Exception as e:
+        await _emit({"step": "market_data", "status": "error", "msg": f"Market data failed: {e}"})
+        return _no_trade_result(today, generated_at, f"Market data unavailable: {e}")
+
+    vix_df  = mdata.get("^VIX")
+    spy_df  = mdata.get("SPY")
+    vix_val = _scalar(vix_df["Close"].iloc[-1]) if vix_df is not None else 18.0
+    spy_10d = ((_scalar(spy_df["Close"].iloc[-1]) / _scalar(spy_df["Close"].iloc[-11])) - 1) * 100 \
+              if spy_df is not None and len(spy_df) >= 11 else 0.0
+    spy_above_sma50 = False
+    if spy_df is not None and len(spy_df) >= 50:
+        sma50_val = _scalar(SMAIndicator(spy_df["Close"], window=50).sma_indicator().iloc[-1])
+        spy_above_sma50 = bool(_scalar(spy_df["Close"].iloc[-1]) > sma50_val)
+
+    sector_returns: dict[str, float] = {}
+    for name, etf in SECTOR_ETF.items():
+        df = mdata.get(etf)
+        if df is not None and len(df) >= 11:
+            sector_returns[name] = round(
+                (_scalar(df["Close"].iloc[-1]) / _scalar(df["Close"].iloc[-11]) - 1) * 100, 2
+            )
+
+    regime = _classify_regime(spy_df, vix_val) if spy_df is not None else "CHOP"
+    market_context = {
+        "regime":          regime,
+        "vix":             round(vix_val, 1),
+        "spy_10d":         round(spy_10d, 2),
+        "spy_above_sma50": spy_above_sma50,
+        "sotd_threshold":  _threshold_for_regime(regime),
+        "sector_performance": sorted(
+            [{"name": k, "etf": SECTOR_ETF[k], "return_10d": v} for k, v in sector_returns.items()],
+            key=lambda x: -x["return_10d"],
+        ),
+    }
+    await _emit({"step": "market_data", "status": "done", "msg": "Price data ready"})
+
+    await _emit({"step": "indicators", "status": "running",
+                 "msg": f"Fetching fundamentals + computing RSI · ADX · BB · Volume for {ticker}…"})
+
+    fund_data = await _fetch_fundamental_batch([ticker])
+    df = mdata.get(ticker)
+    if df is None or len(df) < 20:
+        await _emit({"step": "indicators", "status": "error", "msg": f"Insufficient price history for {ticker}"})
+        return _no_trade_result(today, generated_at, f"Insufficient history for {ticker}", market_context=market_context)
+
+    try:
+        ind = _compute_indicators(df)
+    except Exception as e:
+        await _emit({"step": "indicators", "status": "error", "msg": f"Indicator error: {e}"})
+        return _no_trade_result(today, generated_at, str(e), market_context=market_context)
+
+    sec_10d    = sector_returns.get(info["sector"], 0.0)
+    fund_score = _score_fundamental(fund_data.get(ticker, {}))
+    sc         = _score_v3(ind, spy_10d, sec_10d, regime, not ind["rsi_recovering"], fund_score)
+    tags = (
+        (["breakout"]         if ind["bb_squeeze"] and ind.get("above_upper_bb") else []) +
+        (["reversal"]         if ind["rsi_recovering"] else []) +
+        (["volume_confirmed"] if ind["vol_ratio"] >= 1.5 else []) +
+        (["above_sma20"]      if ind["above_sma20"] else [])
+    )
+    c = {"ticker": ticker, "sector": info["sector"], "company": info["company"]}
+    scored_entry = {**c, "ind": ind, "score": sc, "tags": tags}
+
+    fd = sc.get("fundamental", {})
+    fund_note = f" | Fund: {fd.get('total', 0)}/30 pts" if fd.get("has_data") else " | Fund: no data"
+    await _emit({"step": "scoring", "status": "done",
+                 "msg": f"{ticker}: {sc['total']} pts (tech {sc.get('tech_component')} + fund {sc.get('fund_component')}){fund_note} | {regime}",
+                 "top_ticker": ticker, "top_score": sc["total"]})
+    await _emit({"step": "indicators", "status": "done", "msg": "1 ticker scored"})
+
+    llm_input = _build_llm_input([scored_entry])
+    await _emit({"step": "llm", "status": "running", "msg": f"Haiku generating full analysis for {ticker}…"})
+    try:
+        llm_result = await _call_llm(llm_input, regime)
+    except Exception as e:
+        logger.error("run_sotd_for_ticker LLM failed: %s", e)
+        await _emit({"step": "llm", "status": "error", "msg": f"LLM failed: {e}"})
+        return _no_trade_result(today, generated_at, f"LLM unavailable: {e}", market_context=market_context)
+
+    if llm_result.get("stock_of_the_day"):
+        fd = sc.get("fundamental", {})
+        llm_result["stock_of_the_day"]["sector"]          = info["sector"]
+        llm_result["stock_of_the_day"]["score_breakdown"] = sc
+        llm_result["stock_of_the_day"]["metrics"] = {
+            k: ind[k] for k in ["price", "rsi", "adx", "vol_ratio", "return_10d",
+                                 "return_5d", "return_3d", "above_sma20", "bb_squeeze"]
+        }
+        llm_result["stock_of_the_day"]["fundamental_data"] = {
+            "revenue_growth": fd.get("revenue_growth"), "net_margin": fd.get("net_margin"),
+            "eps_growth": fd.get("eps_growth"), "roa": fd.get("roa"), "roe": fd.get("roe"),
+            "pe_ttm": fd.get("pe_ttm"), "fund_score": fd.get("total", 0),
+            "has_data": fd.get("has_data", False), "source": fd.get("source", "none"),
+        }
+
+    sotd_data = llm_result.get("stock_of_the_day") or {}
+    await _emit({"step": "llm", "status": "done",
+                 "msg": f"{sotd_data.get('tier', 'Analysis')}: {ticker} (score {sotd_data.get('confidence_score', sc['total'])})"})
+
+    all_candidates = [{
+        "ticker": ticker, "company": info["company"], "sector": info["sector"],
+        "score": sc["total"], "score_breakdown": sc, "tags": tags,
+        "metrics": {k: ind[k] for k in ["rsi", "adx", "vol_ratio", "return_10d",
+                                          "above_sma20", "bb_squeeze", "rsi_recovering"]},
+        "fundamental": {"revenue_growth": fd.get("revenue_growth"), "net_margin": fd.get("net_margin"),
+                        "fund_score": fd.get("total", 0), "has_data": fd.get("has_data", False)},
+        "passed_filter": True,
+    }]
+
+    return {
+        "generated_at":        generated_at,
+        "pick_date":           today,
+        "no_trade_day":        False,
+        "market_context":      market_context,
+        "stock_of_the_day":    llm_result.get("stock_of_the_day"),
+        "other_considered":    llm_result.get("other_considered", []),
+        "all_candidates":      all_candidates,
+        "conviction_threshold": 65,
+        "_ticker_review_mode": True,
+        "_reviewed_ticker":    ticker,
+    }
+
+
 def _no_trade_result(pick_date: str, generated_at: str, reason: str,
                      market_context: dict | None = None) -> dict:
     return {

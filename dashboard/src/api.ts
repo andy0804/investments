@@ -18,6 +18,8 @@ export const getSotdFull        = (forceRefresh = false) =>
   api.get(`/analysis/sotd/full${forceRefresh ? '?force_refresh=true' : ''}`)
 
 export const getSotdHistory     = () => api.get('/analysis/sotd/history')
+export const getPickLab        = () => api.get('/analysis/sotd/pick-lab')
+export const getPickLabAlerts  = () => api.get('/analysis/sotd/pick-lab/alerts')
 export const getSotdRepeatHits  = () => api.get('/analysis/sotd/repeat-hits')
 
 // Price history for mini chart
@@ -91,6 +93,8 @@ export const restartDaemon      = () => api.post('/system/daemon/restart')
 // SSE stream URL (not axios — used with native EventSource)
 export const sotdStreamUrl = (forceRefresh = true) =>
   `/api/analysis/sotd/stream?force_refresh=${forceRefresh}`
+export const sotdTickerStreamUrl = (ticker: string) =>
+  `/api/analysis/sotd/stream-ticker?ticker=${encodeURIComponent(ticker)}`
 
 // Fundamental Intelligence
 export const getFundamentals = (

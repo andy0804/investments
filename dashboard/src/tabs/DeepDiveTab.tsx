@@ -70,8 +70,8 @@ function SavedList({ onLoad }: { onLoad: (dive: any) => void }) {
   )
 }
 
-export default function DeepDiveTab() {
-  const [symbol,  setSymbol]  = useState('')
+export default function DeepDiveTab({ prefillTicker, prefillSeq }: { prefillTicker?: string; prefillSeq?: number }) {
+  const [symbol,  setSymbol]  = useState(prefillTicker ?? '')
   const [result,  setResult]  = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
@@ -79,6 +79,10 @@ export default function DeepDiveTab() {
   const [savedId, setSavedId] = useState<number | null>(null)
   const [showSaved, setShowSaved] = useState(false)
   const info = usePageInfo()
+
+  useEffect(() => {
+    if (prefillTicker && prefillSeq) handleRun(prefillTicker)
+  }, [prefillSeq])
 
   const handleRun = async (sym?: string) => {
     const s = (sym ?? symbol).trim().toUpperCase()

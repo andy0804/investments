@@ -22,6 +22,77 @@ open http://localhost:5173
 
 ---
 
+## Environment Setup
+
+Create a `.env` file in the project root. Copy the block below and fill in your keys.
+
+```env
+# ── Anthropic (required) ──────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL_HAIKU=claude-haiku-4-5-20251001
+ANTHROPIC_MODEL_SONNET=claude-sonnet-4-6
+
+# ── Market Data ───────────────────────────────────────────────────────────────
+FINNHUB_API_KEY=
+ALPHA_VANTAGE_KEY=
+FRED_API_KEY=
+FINANCIAL_MODELLING_API_KEY=
+
+# ── SEC / EDGAR ───────────────────────────────────────────────────────────────
+EDGAR_API_KEY=
+
+# ── Telegram ──────────────────────────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+
+# ── Investor profile (used by the agent for all decisions) ────────────────────
+PORTFOLIO_SIZE=100000
+RISK_TOLERANCE=balanced
+MIN_HOLD_DAYS=30
+MAX_SINGLE_POSITION_PCT=8
+MAX_SECTOR_CONCENTRATION_PCT=35
+```
+
+---
+
+### API Keys — Where to Get Them
+
+| Key | Free? | Sign-up URL | What it powers |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Paid (usage-based) | https://console.anthropic.com/ | All AI analysis — signals, deep dives, Alpha Agent committee, coaching |
+| `FINNHUB_API_KEY` | Free tier | https://finnhub.io/register | Real-time prices, company news, earnings estimates, analyst ratings |
+| `ALPHA_VANTAGE_KEY` | Free tier | https://www.alphavantage.co/support/#api-key | Technical indicators, intraday price history |
+| `FRED_API_KEY` | Free | https://fred.stlouisfed.org/docs/api/api_key.html | VIX and macro indicators (Federal Reserve data) |
+| `FINANCIAL_MODELLING_API_KEY` | Free tier | https://financialmodelingprep.com/developer/docs/ | Historical prices, company profiles, income statements, earnings calendar |
+| `EDGAR_API_KEY` | Free | https://app.edgar.tools/ | SEC filings (10-K, 10-Q, 8-K, insider trades) via the edgar.tools MCP server — used by Alpha Agent's Research Agent |
+| `TELEGRAM_BOT_TOKEN` | Free | Message `@BotFather` on Telegram → `/newbot` | Morning briefs, stop-loss alerts, Telegram commands |
+| `TELEGRAM_CHAT_ID` | Free | Message `@userinfobot` on Telegram | Targets all alerts to your personal chat |
+
+### Investor Profile Variables
+
+These are not API keys — they shape how the agent sizes positions and manages risk.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORTFOLIO_SIZE` | `100000` | Total portfolio value in USD — used for position sizing calculations |
+| `RISK_TOLERANCE` | `balanced` | `conservative`, `balanced`, or `aggressive` |
+| `MIN_HOLD_DAYS` | `30` | Minimum hold period before the agent suggests selling |
+| `MAX_SINGLE_POSITION_PCT` | `8` | Maximum % of portfolio in any one stock |
+| `MAX_SECTOR_CONCENTRATION_PCT` | `35` | Maximum % of portfolio in any one sector |
+
+### Minimum Keys to Get Running
+
+| Key | Without it |
+|---|---|
+| `ANTHROPIC_API_KEY` | Nothing works — all AI features disabled |
+| `FINNHUB_API_KEY` | No market data sync, no real-time prices |
+| `FRED_API_KEY` | No VIX data, regime gate defaults to NORMAL |
+| `FINANCIAL_MODELLING_API_KEY` | No technicals, fundamentals, or earnings calendar |
+
+All other keys degrade gracefully — the feature using that API logs a warning and skips.
+
+---
+
 ## Web App Guide
 
 ### Header (always visible)

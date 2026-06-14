@@ -173,7 +173,7 @@ async def _run_llm(prompt: str, model_key: str) -> tuple[dict, float]:
 
     msg = await client.messages.create(
         model=model,
-        max_tokens=600,
+        max_tokens=1200,
         messages=[{"role": "user", "content": prompt}],
     )
     content = msg.content[0].text.strip()

@@ -601,6 +601,45 @@ async def sotd_stream(force_refresh: bool = True):
     )
 
 
+@app.get("/analysis/sotd/stream-ticker")
+async def sotd_stream_ticker(ticker: str):
+    """SSE endpoint — runs the full SOTD analysis pipeline for a specific ticker (bypasses screener)."""
+    import asyncio as _asyncio
+    from app.analysis.sotd_engine import run_sotd_for_ticker
+
+    queue: _asyncio.Queue = _asyncio.Queue()
+
+    async def emit(event: dict):
+        await queue.put(event)
+
+    async def run():
+        try:
+            result = await run_sotd_for_ticker(ticker, emit=emit)
+            await queue.put({"step": "complete", "status": "done", "data": result})
+        except Exception as e:
+            logger.error("sotd_stream_ticker error for %s: %s", ticker, e)
+            await queue.put({"step": "error", "status": "error", "msg": str(e)})
+
+    _asyncio.create_task(run())
+
+    async def generate():
+        while True:
+            try:
+                event = await _asyncio.wait_for(queue.get(), timeout=180.0)
+            except _asyncio.TimeoutError:
+                yield f"data: {json.dumps({'step': 'error', 'status': 'error', 'msg': 'Timed out'})}\n\n"
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("step") in ("complete", "error"):
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 @app.get("/analysis/sotd/repeat-hits")
 async def sotd_repeat_hits():
     """Stocks that scored #1 but were suppressed as repeat picks."""
@@ -751,6 +790,265 @@ async def sotd_history():
         })
 
     return {"status": "ok", "picks": picks}
+
+
+@app.get("/analysis/sotd/pick-lab")
+async def sotd_pick_lab():
+    """
+    Enhanced SOTD pick history for Pick Lab page.
+    Returns all picks with:
+     - raw gain_pct (entry → today)
+     - vs_spy_pct  (gain_pct minus SPY return over same window)
+     - return_30d  (gain at exactly 30 days after pick, or None if < 30 days ago)
+     - vs_spy_30d  (return_30d minus SPY return over same 30-day window)
+     - alert_flag  (BULL/BEAR/None — unusual intraday move today)
+     - full signal_json
+    """
+    import asyncio
+    from datetime import date as _date, timedelta
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT pick_date, symbol, regime, signal_json FROM stock_picks ORDER BY pick_date DESC"
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    if not rows:
+        return {"status": "ok", "picks": []}
+
+    symbols = list({r["symbol"] for r in rows if r["symbol"]})
+
+    def _fetch_all():
+        import yfinance as yf, warnings, pandas as pd
+        warnings.filterwarnings("ignore")
+        result = {}
+        try:
+            tickers_str = " ".join(symbols + ["SPY"])
+            raw = yf.download(tickers_str, period="1y", interval="1d",
+                              auto_adjust=True, progress=False)
+            if raw.empty:
+                return result
+            # Normalise to {ticker: {date: close}}
+            if isinstance(raw.columns, pd.MultiIndex):
+                closes = raw["Close"] if "Close" in raw.columns.get_level_values(0) \
+                    else raw.xs("Close", axis=1, level=1)
+            else:
+                closes = raw[["Close"]].rename(columns={"Close": symbols[0]}) \
+                    if len(symbols) == 1 else raw["Close"]
+
+            for sym in closes.columns:
+                result[sym] = {}
+                for dt, price in closes[sym].items():
+                    if price and str(price) != "nan":
+                        result[sym][str(dt)[:10]] = round(float(price), 4)
+
+            # Intraday info for alert detection (today's fast_info)
+            result["_intraday"] = {}
+            for sym in symbols:
+                try:
+                    fi = yf.Ticker(sym).fast_info
+                    result["_intraday"][sym] = {
+                        "change_pct": round((fi.last_price / fi.previous_close - 1) * 100, 2)
+                        if fi.previous_close else None,
+                        "volume":     fi.three_month_average_volume or None,
+                    }
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning("pick_lab price fetch: %s", e)
+        return result
+
+    try:
+        prices = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, _fetch_all),
+            timeout=25.0
+        )
+    except asyncio.TimeoutError:
+        prices = {}
+
+    spy_prices  = prices.get("SPY", {})
+    intraday    = prices.get("_intraday", {})
+    today_str   = _date.today().isoformat()
+
+    def _closest_price(price_map: dict, from_date: str) -> tuple[float | None, str | None]:
+        """Return (price, actual_date) on or after from_date."""
+        for d in sorted(price_map.keys()):
+            if d >= from_date:
+                return price_map[d], d
+        return None, None
+
+    def _latest_price(price_map: dict) -> float | None:
+        if not price_map:
+            return None
+        return price_map.get(today_str) or price_map[sorted(price_map.keys())[-1]]
+
+    picks_out = []
+    for row in rows:
+        sym = row["symbol"]
+        if not sym:
+            continue
+        pick_date = row["pick_date"]
+        sig = {}
+        try:
+            sig = json.loads(row["signal_json"] or "{}")
+        except Exception:
+            pass
+        sotd    = sig.get("stock_of_the_day") or {}
+        metrics = sotd.get("metrics") or {}
+
+        sym_prices = prices.get(sym, {})
+
+        entry_price, entry_date = _closest_price(sym_prices, pick_date)
+        if not entry_price and metrics.get("price"):
+            entry_price = metrics["price"]
+            entry_date  = pick_date
+
+        current_price = _latest_price(sym_prices)
+
+        # gain_pct: entry → today
+        gain_pct = None
+        if entry_price and current_price and entry_price > 0:
+            gain_pct = round((current_price - entry_price) / entry_price * 100, 2)
+
+        # SPY return over same window
+        spy_entry, _ = _closest_price(spy_prices, entry_date or pick_date)
+        spy_now      = _latest_price(spy_prices)
+        spy_gain     = round((spy_now - spy_entry) / spy_entry * 100, 2) \
+            if spy_entry and spy_now and spy_entry > 0 else None
+        vs_spy_pct   = round(gain_pct - spy_gain, 2) \
+            if gain_pct is not None and spy_gain is not None else None
+
+        # 30-day return
+        d0        = _date.fromisoformat(pick_date)
+        days_held = (_date.today() - d0).days
+        return_30d = vs_spy_30d = None
+        if days_held >= 30:
+            d30_str = (d0 + timedelta(days=30)).isoformat()
+            price_30d, _ = _closest_price(sym_prices, d30_str)
+            if price_30d and entry_price and entry_price > 0:
+                return_30d = round((price_30d - entry_price) / entry_price * 100, 2)
+                spy_30d, _ = _closest_price(spy_prices, d30_str)
+                spy_d30_entry, _ = _closest_price(spy_prices, entry_date or pick_date)
+                if spy_30d and spy_d30_entry and spy_d30_entry > 0:
+                    spy_30d_gain = (spy_30d - spy_d30_entry) / spy_d30_entry * 100
+                    vs_spy_30d = round(return_30d - spy_30d_gain, 2)
+
+        # Alert flag — unusual move today (only for picks ≤ 90 days old)
+        alert_flag = None
+        if days_held <= 90:
+            chg = intraday.get(sym, {}).get("change_pct")
+            if chg is not None:
+                if chg >= 3.0:
+                    alert_flag = "BULL"
+                elif chg <= -3.0:
+                    alert_flag = "BEAR"
+
+        picks_out.append({
+            "pick_date":        pick_date,
+            "symbol":           sym,
+            "company":          sotd.get("company_name", sym),
+            "sector":           sotd.get("sector", ""),
+            "regime":           row["regime"],
+            "confidence_score": sotd.get("confidence_score"),
+            "signal_type":      sotd.get("signal_type", ""),
+            "tier":             sotd.get("tier", ""),
+            "summary":          sotd.get("summary", ""),
+            "thesis":           sotd.get("thesis", sotd.get("summary", "")),
+            "score_breakdown":  sotd.get("score_breakdown", {}),
+            "holding_horizon":  sotd.get("holding_horizon", ""),
+            "conviction_level": sotd.get("conviction_level", ""),
+            "entry_price":      round(entry_price, 2) if entry_price else None,
+            "current_price":    round(current_price, 2) if current_price else None,
+            "gain_pct":         gain_pct,
+            "vs_spy_pct":       vs_spy_pct,
+            "return_30d":       return_30d,
+            "vs_spy_30d":       vs_spy_30d,
+            "days_held":        days_held,
+            "alert_flag":       alert_flag,
+            "change_today_pct": intraday.get(sym, {}).get("change_pct"),
+        })
+
+    return {"status": "ok", "picks": picks_out}
+
+
+@app.get("/analysis/sotd/pick-lab/alerts")
+async def sotd_pick_lab_alerts():
+    """
+    Quick scan: which picks from the last 90 days have unusual moves TODAY.
+    Throttled — returns at most one alert per ticker per calendar day.
+    Called by the frontend every 5 minutes to drive browser notifications.
+    """
+    import asyncio
+    from datetime import date as _date
+
+    cutoff = (_date.today() - __import__("datetime").timedelta(days=90)).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT pick_date, symbol, signal_json FROM stock_picks WHERE pick_date >= ? AND symbol IS NOT NULL",
+            (cutoff,)
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    if not rows:
+        return {"alerts": []}
+
+    symbols = list({r["symbol"] for r in rows})
+
+    def _check_moves():
+        import yfinance as yf
+        alerts = []
+        for sym in symbols:
+            try:
+                fi = yf.Ticker(sym).fast_info
+                prev  = fi.previous_close or 0
+                price = fi.last_price or 0
+                if prev <= 0:
+                    continue
+                chg_pct = (price - prev) / prev * 100
+                if abs(chg_pct) >= 3.0:
+                    alerts.append({
+                        "symbol":     sym,
+                        "change_pct": round(chg_pct, 2),
+                        "flag":       "BULL" if chg_pct > 0 else "BEAR",
+                        "price":      round(price, 2),
+                    })
+            except Exception:
+                pass
+        return alerts
+
+    try:
+        raw_alerts = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, _check_moves),
+            timeout=15.0
+        )
+    except asyncio.TimeoutError:
+        raw_alerts = []
+
+    # Enrich alerts with pick context
+    sym_to_pick = {}
+    for r in rows:
+        sym = r["symbol"]
+        if sym not in sym_to_pick:
+            try:
+                sig  = json.loads(r["signal_json"] or "{}")
+                sotd = sig.get("stock_of_the_day") or {}
+                sym_to_pick[sym] = {
+                    "pick_date":        r["pick_date"],
+                    "confidence_score": sotd.get("confidence_score"),
+                    "company":          sotd.get("company_name", sym),
+                    "days_since_pick":  (_date.today() - _date.fromisoformat(r["pick_date"])).days,
+                }
+            except Exception:
+                sym_to_pick[sym] = {"pick_date": r["pick_date"]}
+
+    enriched = []
+    for a in raw_alerts:
+        ctx = sym_to_pick.get(a["symbol"], {})
+        enriched.append({**a, **ctx})
+
+    return {"alerts": enriched}
 
 
 @app.get("/analysis/price-history/{symbol}")

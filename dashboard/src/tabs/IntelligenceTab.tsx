@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { getSotdFull, sotdStreamUrl, getMarketQuotes, getSotdRepeatHits } from '../api'
+import { getSotdFull, sotdStreamUrl, sotdTickerStreamUrl, getMarketQuotes, getSotdRepeatHits } from '../api'
 import ScoreGauge from '../components/ScoreGauge'
 import MiniChart from '../components/MiniChart'
 import RelativeStrengthChart from '../components/RelativeStrengthChart'
@@ -678,15 +678,20 @@ function AlgorithmInfoModal({ data, onClose, onGoToConfig }: {
   )
 }
 
-export default function IntelligenceTab({ onGoToConfig }: { onGoToConfig?: () => void }) {
+export default function IntelligenceTab({ onGoToConfig, prefillTicker, prefillSeq }: {
+  onGoToConfig?: () => void
+  prefillTicker?: string
+  prefillSeq?: number
+}) {
   const [data,        setData]        = useState<any>(null)
   const [streaming,   setStreaming]   = useState(false)
   const [steps,       setSteps]       = useState<PipelineStep[]>(PIPELINE_STEPS.map(s => ({ ...s })))
   const [elapsed,     setElapsed]     = useState(0)
   const [streamErr,   setStreamErr]   = useState('')
-  const [liveQuote,   setLiveQuote]   = useState<{ price: number | null; change_pct: number | null } | null>(null)
+  const [liveQuote,   setLiveQuote]   = useState<{ price: number | null; change_pct: number | null; ytd_pct: number | null } | null>(null)
   const [repeatHits,  setRepeatHits]  = useState<any[]>([])
   const [showInfo,    setShowInfo]    = useState(false)
+  const [reviewMode,  setReviewMode]  = useState(false)
   const esRef      = useRef<EventSource | null>(null)
   const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null)
   const quoteTimer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -694,14 +699,15 @@ export default function IntelligenceTab({ onGoToConfig }: { onGoToConfig?: () =>
   const updateStep = (id: string, status: StepStatus, msg: string) =>
     setSteps(prev => prev.map(s => s.id === id ? { ...s, status, msg } : s))
 
-  const startStream = (forceRefresh = true) => {
+  const startStream = (forceRefresh = true, tickerOverride?: string) => {
     if (esRef.current) { esRef.current.close(); esRef.current = null }
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-    setStreaming(true); setStreamErr('')
+    setStreaming(true); setStreamErr(''); setData(null)
     setSteps(PIPELINE_STEPS.map(s => ({ ...s }))); setElapsed(0)
     const start = Date.now()
     timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500)
-    const es = new EventSource(sotdStreamUrl(forceRefresh))
+    const url = tickerOverride ? sotdTickerStreamUrl(tickerOverride) : sotdStreamUrl(forceRefresh)
+    const es = new EventSource(url)
     esRef.current = es
     es.onmessage = (e) => {
       try {
@@ -737,6 +743,13 @@ export default function IntelligenceTab({ onGoToConfig }: { onGoToConfig?: () =>
       .catch(() => {})
     return () => { if (esRef.current) esRef.current.close(); if (timerRef.current) clearInterval(timerRef.current) }
   }, [])
+
+  useEffect(() => {
+    if (prefillTicker && prefillSeq && prefillSeq > 0) {
+      setReviewMode(true)
+      startStream(true, prefillTicker)
+    }
+  }, [prefillSeq])
 
   useEffect(() => {
     const ticker = data?.stock_of_the_day?.ticker
@@ -814,6 +827,31 @@ export default function IntelligenceTab({ onGoToConfig }: { onGoToConfig?: () =>
   // ── Layout ───────────────────────────────────────────────────────────────────
   return (
     <div style={{ background: T.bg, minHeight: '100%', padding: '14px 18px' }}>
+
+      {/* Review mode banner */}
+      {reviewMode && data?._ticker_review_mode && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
+          background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 8, padding: '8px 14px',
+        }}>
+          <span style={{ fontSize: '0.75rem', color: '#93C5FD' }}>
+            Reviewing <strong style={{ fontFamily: 'var(--mono)', color: '#F1F5F9' }}>{data._reviewed_ticker}</strong> — live analysis on today's data, not a historical replay
+          </span>
+          <button
+            className="btn sm"
+            style={{ marginLeft: 'auto', fontSize: '0.72rem' }}
+            onClick={() => {
+              setReviewMode(false)
+              getSotdFull(false)
+                .then(r => { const d = r.data.data; if (d?.stock_of_the_day) setData(d); else startStream(false) })
+                .catch(() => startStream(false))
+            }}
+          >
+            ← Today's Pick
+          </button>
+        </div>
+      )}
 
       {/* Action row */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10, gap: 8, alignItems: 'center' }}>
@@ -894,6 +932,11 @@ export default function IntelligenceTab({ onGoToConfig }: { onGoToConfig?: () =>
                       </span>
                     )}
                     <span style={{ fontSize: 9, color: T.textMut, fontFamily: T.mono, letterSpacing: '0.06em' }}>LIVE</span>
+                    {liveQuote.ytd_pct != null && (
+                      <span style={{ fontSize: '0.72rem', fontFamily: T.mono, fontWeight: 700, color: liveQuote.ytd_pct >= 0 ? T.green : T.red }}>
+                        YTD {liveQuote.ytd_pct >= 0 ? '+' : ''}{liveQuote.ytd_pct.toFixed(1)}%
+                      </span>
+                    )}
                   </span>
                 )}
                 {metrics.price && <span style={{ fontSize: 10, color: T.textMut, fontFamily: T.mono }}>pick @ ${metrics.price.toFixed(2)}</span>}
