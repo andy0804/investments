@@ -11,6 +11,7 @@ import VirtualPortfolioTab from './tabs/VirtualPortfolioTab'
 import SOTDHistoryTab from './tabs/SOTDHistoryTab'
 import PickLabTab from './tabs/PickLabTab'
 import BestBetTab from './tabs/BestBetTab'
+import AlphaLabTab from './tabs/AlphaLabTab'
 import ResearchPage from './pages/ResearchPage'
 import OptionsDeskPage from './pages/OptionsDeskPage'
 import './App.css'
@@ -20,7 +21,7 @@ type NavId =
   | 'intelligence' | 'deep-dive' | 'best-bet' | 'pick-history' | 'pick-lab' | 'universe'
   | 'portfolio'    | 'ai-portfolio'
   | 'options-desk' | 'schedules' | 'config'
-  | 'research'     | 'alpha-agent'
+  | 'research'     | 'alpha-agent' | 'alpha-lab'
 
 interface NavItem   { id: NavId; label: string; badge?: string }
 interface NavSection { title: string; items: NavItem[] }
@@ -50,6 +51,7 @@ const NAV: NavSection[] = [
     title: 'Alpha',
     items: [
       { id: 'alpha-agent',   label: 'Alpha Agent',  badge: 'AI' },
+      { id: 'alpha-lab',     label: 'Alpha Lab',    badge: 'NEW' },
     ],
   },
   {
@@ -74,6 +76,7 @@ const IC: Record<NavId, React.FC<{ className?: string }>> = {
   'deep-dive':     p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>,
   'pick-history':  p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
   'pick-lab':      p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 001.357 2.059l.893.384a2.25 2.25 0 011.357 2.059V19.5a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 19.5v-1.607a2.25 2.25 0 011.357-2.059l.893-.384a2.25 2.25 0 001.357-2.059V8.818m5.143-5.714a24.302 24.302 0 00-4.5 0"/></svg>,
+  'alpha-lab':     p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"/></svg>,
   'universe':      p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><circle cx="12" cy="12" r="9"/><path strokeLinecap="round" strokeLinejoin="round" d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>,
   'portfolio':     p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75"/></svg>,
   'ai-portfolio':  p => <svg {...p} viewBox="0 0 24 24" fill="none" strokeWidth={1.75} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path strokeLinecap="round" strokeLinejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>,
@@ -349,6 +352,7 @@ export default function App() {
           {visited.has('best-bet')      && <div className={clsx('h-full overflow-y-auto', active !== 'best-bet'      && 'hidden')} style={{ background: '#07101F' }}><div className="content"><BestBetTab /></div></div>}
           {visited.has('pick-history')  && <div className={clsx('h-full overflow-y-auto', active !== 'pick-history'  && 'hidden')} style={{ background: '#07101F' }}><div className="content"><SOTDHistoryTab /></div></div>}
           {visited.has('pick-lab')      && <div className={clsx('h-full overflow-y-auto', active !== 'pick-lab'      && 'hidden')} style={{ background: '#07101F' }}><div className="content"><PickLabTab onDeepDive={openInDeepDive} /></div></div>}
+          {visited.has('alpha-lab')     && <div className={clsx('h-full overflow-hidden',  active !== 'alpha-lab'     && 'hidden')} style={{ background: '#07101F' }}><AlphaLabTab onOpenDashboard={openInDeepDive} /></div>}
           {visited.has('universe')      && <div className={clsx('h-full overflow-y-auto', active !== 'universe'      && 'hidden')} style={{ background: '#07101F' }}><div className="content"><UniverseTab /></div></div>}
           {visited.has('portfolio')     && <div className={clsx('h-full overflow-y-auto', active !== 'portfolio'     && 'hidden')} style={{ background: '#07101F' }}><div className="content"><PortfolioIntelligenceTab /></div></div>}
           {visited.has('ai-portfolio')  && <div className={clsx('h-full overflow-y-auto', active !== 'ai-portfolio'  && 'hidden')} style={{ background: '#07101F' }}><div className="content"><VirtualPortfolioTab /></div></div>}

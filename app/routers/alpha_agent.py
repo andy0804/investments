@@ -479,6 +479,281 @@ async def stream_activity():
     )
 
 
+# ─── Phase 1: Market Intelligence ───────────────────────────────────────────
+
+@router.get("/market-narrative")
+async def get_market_narrative():
+    """Returns latest market narrative + ranked opportunities from last scan."""
+    from app.analysis.alpha_agent.macro_intelligence import get_latest_narrative
+    narrative = await get_latest_narrative()
+    if not narrative:
+        return {"narrative": None, "opportunities": []}
+
+    # Attach opportunities from the same row
+    opportunities = []
+    try:
+        opp_json = narrative.pop("opportunities_json", None) or "[]"
+        opportunities = json.loads(opp_json)
+    except Exception:
+        pass
+
+    return {"narrative": narrative, "opportunities": opportunities}
+
+
+@router.get("/predictions")
+async def get_predictions(limit: int = 50):
+    """Returns prediction records with actuals where resolved."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM alpha_agent_predictions ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/counterfactuals")
+async def get_counterfactuals(limit: int = 50):
+    """Returns logged passed opportunities and their outcomes."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM alpha_agent_counterfactuals ORDER BY passed_at DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/pattern-memory")
+async def get_pattern_memory():
+    """Returns the alpha pattern memory library."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM alpha_pattern_memory ORDER BY observations DESC, avg_alpha DESC"
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+# ─── Phase 3: Calibration & Learning ────────────────────────────────────────
+
+@router.get("/calibration")
+async def get_calibration(status: str = ""):
+    from app.analysis.alpha_agent.calibration import get_calibration_reports
+    return await get_calibration_reports(status)
+
+@router.post("/calibration/run")
+async def run_calibration_endpoint():
+    from app.analysis.alpha_agent.calibration import run_calibration
+    return await run_calibration()
+
+@router.post("/calibration/{cal_id}/apply")
+async def apply_calibration_endpoint(cal_id: int):
+    from app.analysis.alpha_agent.calibration import apply_calibration
+    result = await apply_calibration(cal_id)
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+@router.post("/calibration/{cal_id}/reject")
+async def reject_calibration_endpoint(cal_id: int):
+    from app.analysis.alpha_agent.calibration import reject_calibration
+    return await reject_calibration(cal_id)
+
+@router.post("/prediction-audit/run")
+async def run_prediction_audit_endpoint():
+    from app.analysis.alpha_agent.calibration import run_prediction_audit
+    result = await run_prediction_audit()
+    if not result:
+        raise HTTPException(500, "Prediction audit failed or insufficient data (need 3+ resolved predictions)")
+    return result
+
+@router.get("/counterfactuals/summary")
+async def get_counterfactual_summary_endpoint():
+    from app.analysis.alpha_agent.calibration import get_counterfactual_summary
+    return await get_counterfactual_summary()
+
+@router.post("/counterfactuals/resolve")
+async def resolve_counterfactuals_endpoint():
+    from app.analysis.alpha_agent.calibration import resolve_counterfactual_outcomes
+    resolved = await resolve_counterfactual_outcomes()
+    return {"resolved": resolved}
+
+
+# ─── Phase 4: Performance Dashboard ─────────────────────────────────────────
+
+@router.get("/performance")
+async def get_performance():
+    """
+    Returns portfolio performance vs SPY benchmark.
+    Computes: total return, alpha, win rate, breakdown by alpha source + regime.
+    """
+    import yfinance as yf, asyncio as _asyncio
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM alpha_agent_positions ORDER BY created_at ASC"
+        ) as cur:
+            positions = [dict(r) for r in await cur.fetchall()]
+        async with db.execute(
+            "SELECT * FROM alpha_agent_predictions ORDER BY created_at ASC"
+        ) as cur:
+            predictions = [dict(r) for r in await cur.fetchall()]
+        async with db.execute(
+            "SELECT cash, total_value, initial_capital FROM alpha_agent_portfolio WHERE id=1"
+        ) as cur:
+            port = dict(await cur.fetchone() or {})
+
+    closed = [p for p in positions if p["status"] == "CLOSED"]
+    open_  = [p for p in positions if p["status"] == "OPEN"]
+
+    pred_by_pos = {p["position_id"]: p for p in predictions}
+
+    # SPY benchmark: buy SPY at each entry date, sell at close date
+    spy_hist = None
+    try:
+        spy_hist = await _asyncio.to_thread(lambda: yf.Ticker("SPY").history(period="max"))
+        spy_hist.index = spy_hist.index.tz_localize(None)
+    except Exception:
+        pass
+
+    def spy_return_over(entry_date: str, exit_date: str) -> float | None:
+        if spy_hist is None or spy_hist.empty:
+            return None
+        try:
+            entry = spy_hist.loc[spy_hist.index >= entry_date]["Close"].iloc[0]
+            end   = spy_hist.loc[spy_hist.index <= exit_date]["Close"].iloc[-1]
+            return round((end / entry - 1) * 100, 2)
+        except Exception:
+            return None
+
+    # Per-trade stats
+    trades = []
+    total_spy_benchmark = 0.0
+    spy_trade_count     = 0
+
+    for pos in closed:
+        ep  = pos.get("entry_price", 0) or 0
+        cp  = pos.get("close_price", ep) or ep
+        pnl = round((cp / ep - 1) * 100, 2) if ep else 0
+
+        spy_ret = spy_return_over(pos.get("open_date",""), pos.get("close_date",""))
+        alpha   = round(pnl - spy_ret, 2) if spy_ret is not None else None
+
+        pred = pred_by_pos.get(pos["id"], {})
+
+        trades.append({
+            "ticker":       pos["ticker"],
+            "direction":    pos["direction"],
+            "open_date":    pos["open_date"],
+            "close_date":   pos["close_date"],
+            "pnl_pct":      pnl,
+            "spy_ret_pct":  spy_ret,
+            "alpha_pct":    alpha,
+            "alpha_source": pred.get("alpha_source", ""),
+            "regime":       pred.get("regime_at_entry", ""),
+            "size_pct":     pos.get("size_pct", 0),
+        })
+
+        if spy_ret is not None:
+            total_spy_benchmark += spy_ret
+            spy_trade_count += 1
+
+    # Aggregate stats
+    wins     = [t for t in trades if t["pnl_pct"] > 0]
+    losses   = [t for t in trades if t["pnl_pct"] <= 0]
+    win_rate = round(len(wins) / len(trades) * 100, 1) if trades else 0
+    avg_win  = round(sum(t["pnl_pct"] for t in wins) / len(wins), 2) if wins else 0
+    avg_loss = round(sum(t["pnl_pct"] for t in losses) / len(losses), 2) if losses else 0
+    avg_spy_benchmark = round(total_spy_benchmark / spy_trade_count, 2) if spy_trade_count else 0
+
+    # Portfolio total return
+    initial  = float(port.get("initial_capital", 10000))
+    current  = float(port.get("total_value", initial))
+    total_return_pct = round((current / initial - 1) * 100, 2) if initial else 0
+
+    # SPY since first trade
+    spy_since_inception = None
+    if trades and spy_hist is not None:
+        spy_since_inception = spy_return_over(
+            min(t["open_date"] for t in trades if t["open_date"]),
+            (datetime.now(UTC).date()).isoformat(),
+        )
+
+    # Breakdown by alpha source
+    by_source: dict[str, dict] = {}
+    for t in trades:
+        src = t.get("alpha_source") or "Unknown"
+        if src not in by_source:
+            by_source[src] = {"trades": 0, "wins": 0, "total_pnl": 0, "total_alpha": 0, "alpha_count": 0}
+        by_source[src]["trades"] += 1
+        if t["pnl_pct"] > 0:
+            by_source[src]["wins"] += 1
+        by_source[src]["total_pnl"] += t["pnl_pct"]
+        if t.get("alpha_pct") is not None:
+            by_source[src]["total_alpha"] += t["alpha_pct"]
+            by_source[src]["alpha_count"] += 1
+
+    source_stats = {
+        src: {
+            "trades":    d["trades"],
+            "win_rate":  round(d["wins"] / d["trades"] * 100, 1),
+            "avg_pnl":   round(d["total_pnl"] / d["trades"], 2),
+            "avg_alpha": round(d["total_alpha"] / d["alpha_count"], 2) if d["alpha_count"] else None,
+        }
+        for src, d in by_source.items()
+    }
+
+    # Breakdown by regime
+    by_regime: dict[str, dict] = {}
+    for t in trades:
+        r = t.get("regime") or "Unknown"
+        if r not in by_regime:
+            by_regime[r] = {"trades": 0, "wins": 0, "total_pnl": 0}
+        by_regime[r]["trades"] += 1
+        if t["pnl_pct"] > 0:
+            by_regime[r]["wins"] += 1
+        by_regime[r]["total_pnl"] += t["pnl_pct"]
+
+    regime_stats = {
+        r: {
+            "trades":   d["trades"],
+            "win_rate": round(d["wins"] / d["trades"] * 100, 1),
+            "avg_pnl":  round(d["total_pnl"] / d["trades"], 2),
+        }
+        for r, d in by_regime.items()
+    }
+
+    return {
+        "portfolio": {
+            "total_value":          current,
+            "initial_capital":      initial,
+            "total_return_pct":     total_return_pct,
+            "spy_since_inception":  spy_since_inception,
+            "alpha_vs_spy":         round(total_return_pct - spy_since_inception, 2) if spy_since_inception else None,
+            "open_positions":       len(open_),
+            "closed_trades":        len(closed),
+        },
+        "trade_stats": {
+            "win_rate":         win_rate,
+            "avg_win_pct":      avg_win,
+            "avg_loss_pct":     avg_loss,
+            "avg_spy_per_trade": avg_spy_benchmark,
+            "avg_alpha_per_trade": round(
+                sum(t["alpha_pct"] for t in trades if t.get("alpha_pct") is not None) /
+                len([t for t in trades if t.get("alpha_pct") is not None]), 2
+            ) if any(t.get("alpha_pct") for t in trades) else None,
+        },
+        "by_alpha_source": source_stats,
+        "by_regime":       regime_stats,
+        "recent_trades":   sorted(trades, key=lambda t: t["close_date"] or "", reverse=True)[:20],
+    }
+
+
 # ─── Market Status ───────────────────────────────────────────────────────────
 
 @router.get("/market/status")

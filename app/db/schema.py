@@ -894,6 +894,88 @@ CREATE TABLE IF NOT EXISTS alpha_agent_activity_log (
     metadata_json TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Alpha Agent Phase 1 — Portfolio Manager Redesign ─────────────────────────
+
+CREATE TABLE IF NOT EXISTS alpha_pattern_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    regime TEXT NOT NULL,
+    alpha_source TEXT NOT NULL,
+    theme TEXT,
+    observations INTEGER NOT NULL DEFAULT 0,
+    avg_5d_return REAL,
+    avg_20d_return REAL,
+    avg_spy_return_20d REAL,
+    avg_alpha REAL,
+    confidence REAL,
+    data_source TEXT DEFAULT 'backtest',
+    last_updated TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_market_narrative (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_at TEXT NOT NULL,
+    regime TEXT,
+    theme TEXT,
+    confidence REAL,
+    narrative TEXT,
+    themes_json TEXT,
+    opportunities_json TEXT,
+    promoted_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id INTEGER REFERENCES alpha_agent_positions(id),
+    ticker TEXT NOT NULL,
+    entry_date TEXT NOT NULL,
+    alpha_source TEXT,
+    predicted_return_5d REAL,
+    predicted_return_20d REAL,
+    predicted_spy_return_20d REAL,
+    predicted_alpha_20d REAL,
+    committee_confidence REAL,
+    falsification_condition TEXT,
+    regime_at_entry TEXT,
+    theme_at_entry TEXT,
+    actual_return_5d REAL,
+    actual_return_20d REAL,
+    actual_spy_return_20d REAL,
+    actual_alpha_20d REAL,
+    resolved_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_counterfactuals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    passed_at TEXT NOT NULL,
+    reason_passed TEXT,
+    price_at_pass REAL,
+    expected_alpha_at_pass REAL,
+    regime TEXT,
+    theme TEXT,
+    return_5d REAL,
+    return_20d REAL,
+    spy_return_20d REAL,
+    alpha_20d REAL,
+    resolved_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS alpha_agent_calibration (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    period_start TEXT,
+    period_end TEXT,
+    alpha_source TEXT,
+    observations INTEGER,
+    avg_predicted REAL,
+    avg_actual REAL,
+    calibration_error REAL,
+    proposed_multiplier REAL,
+    status TEXT DEFAULT 'PENDING',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 CONFIG_DEFAULTS = [
@@ -1098,6 +1180,52 @@ async def init_db():
             sin_cols = {row[1] for row in await cur.fetchall()}
         if sin_cols and "embedding_json" not in sin_cols:
             await db.execute("ALTER TABLE stock_intelligence_notes ADD COLUMN embedding_json TEXT")
+
+        # Phase 1 — migrate alpha_agent_market_narrative: add opportunities_json if missing
+        async with db.execute("PRAGMA table_info(alpha_agent_market_narrative)") as cur:
+            narr_cols = {row[1] for row in await cur.fetchall()}
+        if narr_cols and "opportunities_json" not in narr_cols:
+            await db.execute(
+                "ALTER TABLE alpha_agent_market_narrative ADD COLUMN opportunities_json TEXT"
+            )
+
+        # Seed initial pattern memory with historically-grounded defaults
+        async with db.execute("SELECT COUNT(*) FROM alpha_pattern_memory") as cur:
+            (pm_count,) = await cur.fetchone()
+        if pm_count == 0:
+            seed_patterns = [
+                # EVENT_DRIVEN patterns (sector-coordinated macro events)
+                ("EVENT_DRIVEN", "Sector Momentum", "Trade Deal / Tariff Relief",
+                 12, 4.1, 7.3, 1.4, 5.9, 68, "historical_seed"),
+                ("EVENT_DRIVEN", "Sector Momentum", "Fed Pivot / Rate Cut",
+                 9, 5.2, 9.1, 3.2, 5.9, 65, "historical_seed"),
+                ("EVENT_DRIVEN", "Sector Momentum", "Geopolitical De-escalation",
+                 7, 3.8, 6.5, 1.6, 4.9, 60, "historical_seed"),
+                ("EVENT_DRIVEN", "Event Catalyst", "Earnings Surprise",
+                 22, 3.2, 5.8, 1.2, 4.6, 72, "historical_seed"),
+                # RISK_ON patterns
+                ("RISK_ON", "Sector Momentum", "Broad Cyclical Rally",
+                 18, 2.8, 4.9, 1.8, 3.1, 58, "historical_seed"),
+                ("RISK_ON", "Macro Theme", "Risk Appetite Recovery",
+                 14, 2.4, 4.1, 2.0, 2.1, 52, "historical_seed"),
+                # NORMAL patterns
+                ("NORMAL", "Mean Reversion", "Oversold Bounce",
+                 31, 1.9, 3.4, 1.4, 2.0, 55, "historical_seed"),
+                ("NORMAL", "Event Catalyst", "Product Launch / News",
+                 16, 2.1, 3.8, 1.5, 2.3, 50, "historical_seed"),
+                # RISK_OFF patterns
+                ("RISK_OFF", "Mean Reversion", "Defensive Rotation Leader",
+                 8, 1.2, 2.1, 0.8, 1.3, 40, "historical_seed"),
+            ]
+            for p in seed_patterns:
+                await db.execute(
+                    """INSERT INTO alpha_pattern_memory
+                       (regime, alpha_source, theme, observations,
+                        avg_5d_return, avg_20d_return, avg_spy_return_20d,
+                        avg_alpha, confidence, data_source)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    p,
+                )
 
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)

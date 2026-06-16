@@ -148,12 +148,13 @@ export default function AlphaAgentPage() {
   const [showAbout, setShowAbout]     = useState(false)
   const [showHowTo, setShowHowTo]     = useState(false)
 
+  const load = () => {
+    getAlphaStatus().then(r => setStatus(r.data)).catch(() => {})
+    getAlphaQueue().then(r => setQueueCount((r.data as unknown[]).length)).catch(() => {})
+    getAlphaLessons('PENDING').then(r => setPendingLessons((r.data as unknown[]).length)).catch(() => {})
+  }
+
   useEffect(() => {
-    const load = () => {
-      getAlphaStatus().then(r => setStatus(r.data)).catch(() => {})
-      getAlphaQueue().then(r => setQueueCount((r.data as unknown[]).length)).catch(() => {})
-      getAlphaLessons('PENDING').then(r => setPendingLessons((r.data as unknown[]).length)).catch(() => {})
-    }
     load()
     const t = setInterval(load, 30_000)
     return () => clearInterval(t)
@@ -242,7 +243,7 @@ export default function AlphaAgentPage() {
           {activeView === 'lessons-learned'  && <LessonsLearned />}
           {activeView === 'market-overview'  && <MarketOverview />}
           {activeView === 'agent-memory'     && <AgentMemory />}
-          {activeView === 'settings'         && <AgentSettings />}
+          {activeView === 'settings'         && <AgentSettings onStatusChange={load} />}
         </div>
       </div>
 

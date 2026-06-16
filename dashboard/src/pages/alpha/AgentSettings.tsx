@@ -58,8 +58,8 @@ function ConfigField({ label, cfgKey, value, onSave, hint }: {
   )
 }
 
-export default function AgentSettings() {
-  const [isOn, setIsOn]           = useState(false)
+export default function AgentSettings({ onStatusChange }: { onStatusChange?: () => void }) {
+  const [isOn, setIsOn]           = useState<boolean | null>(null)
   const [config, setConfig]       = useState<Config>({})
   const [watchlistItems, setWatchlistItems] = useState<WatchlistItem[]>([])
   const [wlSummary, setWlSummary] = useState<Record<string,number>>({})
@@ -80,8 +80,15 @@ export default function AgentSettings() {
   useEffect(() => { load() }, [])
 
   const handleOnOff = async () => {
-    const next = !isOn; setIsOn(next)
-    try { await setAlphaOnOff(next) } catch { setIsOn(!next) }
+    const current = isOn ?? false
+    const next = !current
+    setIsOn(next)
+    try {
+      await setAlphaOnOff(next)
+      onStatusChange?.()
+    } catch {
+      setIsOn(current)
+    }
   }
 
   const handleConfigSave = async (key: string, value: string) => {
@@ -202,17 +209,19 @@ export default function AgentSettings() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9', marginBottom: 3 }}>Alpha Agent</div>
             <div style={{ fontSize: 13, color: '#64748b' }}>
-              {isOn
-                ? 'Running — scanning watchlist every 5 min during market hours (9:30–4:00 ET)'
-                : 'Stopped — no events will be detected and no new positions will open'}
+              {isOn === null
+                ? 'Loading status…'
+                : isOn
+                  ? 'Running — scanning watchlist every 5 min during market hours (9:30–4:00 ET)'
+                  : 'Stopped — no events will be detected and no new positions will open'}
             </div>
           </div>
-          <button className="btn" onClick={handleOnOff}
+          <button className="btn" onClick={handleOnOff} disabled={isOn === null}
             style={isOn
               ? { background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderColor: 'rgba(239,68,68,0.25)' }
               : { background: '#22c55e', color: '#fff', borderColor: 'transparent' }
             }>
-            {isOn ? 'Turn OFF' : 'Turn ON'}
+            {isOn === null ? '…' : isOn ? 'Turn OFF' : 'Turn ON'}
           </button>
         </div>
       </div>

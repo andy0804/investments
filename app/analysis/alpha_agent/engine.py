@@ -68,7 +68,7 @@ async def open_paper_position(run_id: int, decision: dict) -> int:
     """Record a paper trade from an approved committee decision."""
     now = datetime.now(UTC).isoformat()
     risk = {}
-    # Re-read risk from the run
+    ticker = ""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -79,15 +79,14 @@ async def open_paper_position(run_id: int, decision: dict) -> int:
                 risk = json.loads(row["risk_json"] or "{}")
                 ticker = row["ticker"]
 
-    entry_price = risk.get("entry_price", 0) or decision.get("entry_price", 0)
-    size_pct    = decision.get("position_size_pct", 5)
-    stop_price  = risk.get("stop_price", 0)
-    target_price= risk.get("target_price", 0)
-    time_stop   = risk.get("time_stop_days", 90)
+    entry_price  = risk.get("entry_price", 0) or decision.get("entry_price", 0)
+    size_pct     = decision.get("position_size_pct", 5)
+    stop_price   = risk.get("stop_price", 0)
+    target_price = risk.get("target_price", 0)
+    time_stop    = risk.get("time_stop_days", 90)
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        # Read current cash
         async with db.execute("SELECT cash, total_value FROM alpha_agent_portfolio WHERE id=1") as cur:
             port = dict(await cur.fetchone())
         position_usd = port["total_value"] * size_pct / 100
@@ -106,7 +105,6 @@ async def open_paper_position(run_id: int, decision: dict) -> int:
         ) as cur:
             position_id = cur.lastrowid
 
-        # Deduct cash
         await db.execute(
             "UPDATE alpha_agent_portfolio SET cash=cash-?, updated_at=? WHERE id=1",
             (position_usd, now),
@@ -115,15 +113,58 @@ async def open_paper_position(run_id: int, decision: dict) -> int:
             "UPDATE alpha_agent_runs SET position_id=? WHERE id=?",
             (position_id, run_id),
         )
+
+        # ── Write prediction record (Phase 2) ────────────────────────────────
+        try:
+            # Pull regime + theme from latest market narrative
+            regime_at_entry = "UNKNOWN"
+            theme_at_entry  = ""
+            async with db.execute(
+                "SELECT regime, theme FROM alpha_agent_market_narrative ORDER BY scan_at DESC LIMIT 1"
+            ) as cur:
+                narr_row = await cur.fetchone()
+            if narr_row:
+                regime_at_entry = narr_row[0] or "UNKNOWN"
+                theme_at_entry  = narr_row[1] or ""
+
+            await db.execute(
+                """INSERT INTO alpha_agent_predictions
+                   (position_id, ticker, entry_date, alpha_source,
+                    predicted_return_20d, predicted_spy_return_20d, predicted_alpha_20d,
+                    committee_confidence, falsification_condition,
+                    regime_at_entry, theme_at_entry, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    position_id, ticker, now[:10],
+                    decision.get("alpha_source", ""),
+                    decision.get("predicted_return_20d", 0),
+                    decision.get("predicted_spy_return_20d", 1.4),
+                    decision.get("expected_alpha_pct", 0),
+                    decision.get("confidence", 0),
+                    decision.get("falsification_condition", ""),
+                    regime_at_entry, theme_at_entry, now,
+                ),
+            )
+        except Exception as pred_err:
+            log.warning("Failed to write prediction record: %s", pred_err)
+
         await db.commit()
 
     log.info("Alpha Agent: opened paper position %s %s @$%.2f (%d%%)",
              decision.get("action"), ticker, entry_price, size_pct)
     await alog.write(
         "position_opened",
-        f"Position opened — {decision.get('action')} {ticker} @ ${entry_price:.2f} ({size_pct:.0f}% of portfolio)",
+        f"Position opened — {decision.get('action')} {ticker} @ ${entry_price:.2f} "
+        f"({size_pct:.0f}% of portfolio) | "
+        f"alpha source: {decision.get('alpha_source', '?')} | "
+        f"expected alpha: {decision.get('expected_alpha_pct', 0):+.1f}% vs SPY",
         ticker=ticker, level="success",
-        metadata={"action": decision.get("action"), "entry_price": entry_price, "size_pct": size_pct},
+        metadata={
+            "action": decision.get("action"), "entry_price": entry_price,
+            "size_pct": size_pct, "alpha_source": decision.get("alpha_source"),
+            "expected_alpha_pct": decision.get("expected_alpha_pct"),
+            "falsification_condition": decision.get("falsification_condition"),
+        },
     )
     return position_id
 
@@ -233,6 +274,58 @@ async def close_paper_position(position_id: int, reason: str = "manual") -> dict
         metadata={"close_price": close_price, "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2)},
     )
 
+    # ── Resolve prediction record + update pattern memory (Phase 2) ─────────
+    try:
+        import yfinance as _yf
+        spy_px_20d_ago = None
+        spy_px_now     = None
+        try:
+            spy_hist = _yf.Ticker("SPY").history(period="30d")
+            if len(spy_hist) >= 20:
+                spy_px_20d_ago = float(spy_hist["Close"].iloc[-20])
+                spy_px_now     = float(spy_hist["Close"].iloc[-1])
+        except Exception:
+            pass
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM alpha_agent_predictions WHERE position_id=? ORDER BY id DESC LIMIT 1",
+                (position_id,),
+            ) as cur:
+                pred_row = await cur.fetchone()
+
+        if pred_row:
+            pred = dict(pred_row)
+            spy_return_20d = 0.0
+            if spy_px_20d_ago and spy_px_now:
+                spy_return_20d = (spy_px_now - spy_px_20d_ago) / spy_px_20d_ago * 100
+
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    """UPDATE alpha_agent_predictions SET
+                       actual_return_20d=?, actual_spy_return_20d=?,
+                       actual_alpha_20d=?, resolved_at=?
+                       WHERE id=?""",
+                    (round(pnl_pct, 2), round(spy_return_20d, 2),
+                     round(pnl_pct - spy_return_20d, 2),
+                     datetime.now(UTC).isoformat(), pred["id"]),
+                )
+                await db.commit()
+
+            # Update alpha_pattern_memory with live outcome
+            from app.analysis.alpha_agent import alpha_research as ar
+            if pred.get("alpha_source") and pred.get("regime_at_entry"):
+                await ar.update_with_outcome(
+                    regime=pred["regime_at_entry"],
+                    alpha_source=pred["alpha_source"],
+                    theme=pred.get("theme_at_entry", ""),
+                    actual_return_20d=round(pnl_pct, 2),
+                    actual_spy_return_20d=round(spy_return_20d, 2),
+                )
+    except Exception as e:
+        log.warning("prediction/pattern update failed: %s", e)
+
     # Run self-corrector after every close — may generate PENDING proposals
     try:
         proposals = await self_corrector.run_after_trade_close()
@@ -245,8 +338,94 @@ async def close_paper_position(position_id: int, reason: str = "manual") -> dict
             "pnl": round(pnl, 2), "pnl_pct": round(pnl_pct, 2)}
 
 
+async def _check_thesis_exit(pos: dict, curr_price: float) -> dict | None:
+    """
+    Evaluates if the falsification condition for a position is met.
+    1 Haiku call per position that has been open 3+ days.
+    Returns alert dict if condition is met, else None.
+    """
+    import os, anthropic, asyncio as _async
+    import yfinance as _yf
+
+    position_id = pos["id"]
+    ticker      = pos["ticker"]
+    open_date   = pos.get("open_date", "")
+
+    # Only check after 3+ days (falsification needs time to play out)
+    try:
+        days_held = (datetime.now(UTC).date() - datetime.fromisoformat(open_date).date()).days
+        if days_held < 3:
+            return None
+    except Exception:
+        return None
+
+    # Get falsification condition from prediction record
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT falsification_condition, alpha_source, regime_at_entry, theme_at_entry "
+            "FROM alpha_agent_predictions WHERE position_id=? ORDER BY id DESC LIMIT 1",
+            (position_id,),
+        ) as cur:
+            pred = await cur.fetchone()
+
+    if not pred or not pred["falsification_condition"]:
+        return None
+
+    falsif = pred["falsification_condition"]
+    entry_price = pos["entry_price"]
+    move_pct = (curr_price - entry_price) / entry_price * 100
+
+    # Get sector ETF context (quick price check, no extra API call)
+    sector_context = f"Current price: ${curr_price:.2f} ({move_pct:+.1f}% from entry ${entry_price:.2f})"
+
+    prompt = f"""You are monitoring an open position for thesis invalidation.
+
+POSITION: {ticker}
+OPEN DATE: {open_date} ({days_held} days ago)
+ALPHA SOURCE: {pred['alpha_source']}
+REGIME AT ENTRY: {pred['regime_at_entry']}
+THEME AT ENTRY: {pred['theme_at_entry']}
+PRICE CONTEXT: {sector_context}
+
+FALSIFICATION CONDITION (written at entry):
+"{falsif}"
+
+Is this falsification condition clearly met based on current price data?
+
+Return ONLY: {{"met": true|false, "confidence": 0-100, "reason": "one sentence"}}
+Only return met=true if you are confident (>70%) the condition has been triggered."""
+
+    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+    try:
+        from app.analysis.alpha_agent import cost_tracker
+        response = await client.messages.create(
+            model=os.getenv("ANTHROPIC_MODEL_HAIKU", "claude-haiku-4-5-20251001"),
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        await cost_tracker.log_call(
+            "thesis_monitor", os.getenv("ANTHROPIC_MODEL_HAIKU", "claude-haiku-4-5-20251001"),
+            response.usage.input_tokens, response.usage.output_tokens, None,
+        )
+        result = json.loads(text)
+        if result.get("met") and result.get("confidence", 0) >= 70:
+            return {
+                "type": "THESIS_INVALIDATED",
+                "position_id": position_id,
+                "ticker": ticker,
+                "falsification_condition": falsif,
+                "reason": result.get("reason", ""),
+                "confidence": result.get("confidence", 0),
+            }
+    except Exception as e:
+        log.debug("thesis_check failed for %s: %s", ticker, e)
+    return None
+
+
 async def monitor_open_positions() -> list[dict]:
-    """Check stop-loss and target hits for all open positions."""
+    """Check stop-loss, target hits, and thesis invalidation for all open positions."""
     import yfinance as yf
     import asyncio as _asyncio
 
@@ -265,7 +444,7 @@ async def monitor_open_positions() -> list[dict]:
             if curr <= 0:
                 continue
 
-            entry = pos["entry_price"]
+            entry    = pos["entry_price"]
             move_pct = (curr - entry) / entry * 100
 
             alert = None
@@ -276,7 +455,7 @@ async def monitor_open_positions() -> list[dict]:
                 alert = {"type": "TARGET_HIT", "position_id": pos["id"],
                          "ticker": pos["ticker"], "pct": round(move_pct, 1)}
 
-            # Update current price in DB
+            # Update current price
             async with aiosqlite.connect(DB_PATH) as db:
                 unrealized = (curr - entry) * pos["shares"]
                 await db.execute(
@@ -287,6 +466,25 @@ async def monitor_open_positions() -> list[dict]:
 
             if alert:
                 alerts.append(alert)
+                await alog.write(
+                    "position_alert",
+                    f"{alert['type']} — {pos['ticker']} @ ${curr:.2f} ({move_pct:+.1f}%)",
+                    ticker=pos["ticker"], level="alert",
+                    metadata=alert,
+                )
+            else:
+                # ── Phase 2: Thesis exit check (only when no price alert) ────
+                thesis_alert = await _check_thesis_exit(pos, curr)
+                if thesis_alert:
+                    alerts.append(thesis_alert)
+                    await alog.write(
+                        "thesis_invalidated",
+                        f"Thesis invalidated — {pos['ticker']}: {thesis_alert.get('reason', '')} "
+                        f"(condition: {thesis_alert.get('falsification_condition', '')[:80]})",
+                        ticker=pos["ticker"], level="alert",
+                        metadata=thesis_alert,
+                    )
+
         except Exception as e:
             log.warning("monitor: failed for %s: %s", pos["ticker"], e)
 

@@ -1916,3 +1916,55 @@ async def stock_analysis_contradictions(ticker: str):
     """Return thesis drift / contradiction alerts for a ticker."""
     from app.analysis.stock_intelligence import detect_contradictions
     return await detect_contradictions(ticker.upper())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ALPHA LAB
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/analysis/alpha-lab/leaderboard")
+async def alpha_lab_leaderboard(period: str = "ytd", limit: int = 20):
+    """Dynamic leaderboard: top gainers/losers/watch for YTD, Q1-Q4, 30d, 90d."""
+    from app.analysis.alpha_lab import compute_leaderboard
+    return await compute_leaderboard(period=period, limit=limit)
+
+
+@app.get("/analysis/alpha-lab/radar")
+async def alpha_lab_radar(
+    reference_ticker: str = "SPY",
+    period: str = "ytd",
+    limit: int = 10,
+    sector_filter: str | None = None,
+):
+    """Find stocks whose current setup matches reference_ticker at the period start."""
+    from app.analysis.alpha_lab import compute_radar
+    return await compute_radar(
+        reference_ticker=reference_ticker.upper(),
+        period=period, limit=limit, sector_filter=sector_filter,
+    )
+
+
+@app.get("/analysis/alpha-lab/dna/{ticker}")
+async def alpha_lab_dna(ticker: str, period: str = "ytd"):
+    """Breakout DNA: before/after technical snapshot + catalyst classification."""
+    from app.analysis.alpha_lab import compute_dna
+    return await compute_dna(ticker=ticker.upper(), period=period)
+
+
+@app.post("/analysis/alpha-lab/dna/{ticker}/analyze")
+async def alpha_lab_dna_analyze(ticker: str, period: str = "ytd"):
+    """On-demand Sonnet full analysis for a breakout (user-triggered, ~$0.03)."""
+    from app.analysis.alpha_lab import compute_dna, generate_dna_analysis
+    dna = await compute_dna(ticker=ticker.upper(), period=period)
+    if "error" in dna:
+        raise HTTPException(status_code=404, detail=dna["error"])
+    text = await generate_dna_analysis(ticker.upper(), dna)
+    dna["analysis_text"] = text
+    return dna
+
+
+@app.get("/analysis/alpha-lab/thesis")
+async def alpha_lab_thesis():
+    """Multi-source theme synthesis: GDELT events + sector ETF rotation → emerging themes via Haiku."""
+    from app.analysis.alpha_lab import compute_thesis
+    return await compute_thesis()

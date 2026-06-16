@@ -17,7 +17,18 @@ export const putConfig          = (updates: Record<string, string>) => api.put('
 export const getSotdFull        = (forceRefresh = false) =>
   api.get(`/analysis/sotd/full${forceRefresh ? '?force_refresh=true' : ''}`)
 
-export const getSotdHistory     = () => api.get('/analysis/sotd/history')
+export const getSotdHistory      = () => api.get('/analysis/sotd/history')
+
+// Alpha Lab
+export const getAlphaLeaderboard = (period = 'ytd', limit = 20) =>
+  api.get(`/analysis/alpha-lab/leaderboard?period=${period}&limit=${limit}`)
+export const getAlphaRadar = (refTicker: string, period = 'ytd', sectorFilter?: string) =>
+  api.get(`/analysis/alpha-lab/radar?reference_ticker=${refTicker}&period=${period}${sectorFilter ? `&sector_filter=${sectorFilter}` : ''}`)
+export const getAlphaDna = (ticker: string, period = 'ytd') =>
+  api.get(`/analysis/alpha-lab/dna/${ticker}?period=${period}`)
+export const postAlphaDnaAnalyze = (ticker: string, period = 'ytd') =>
+  api.post(`/analysis/alpha-lab/dna/${ticker}/analyze?period=${period}`)
+export const getAlphaThesis = () => api.get('/analysis/alpha-lab/thesis')
 export const getPickLab        = () => api.get('/analysis/sotd/pick-lab')
 export const getPickLabAlerts  = () => api.get('/analysis/sotd/pick-lab/alerts')
 export const getSotdRepeatHits  = () => api.get('/analysis/sotd/repeat-hits')
@@ -221,4 +232,25 @@ export const getAlphaProposals     = (status = '') => api.get(`/alpha-agent/prop
 export const decideAlphaProposal   = (id: number, action: 'approve' | 'reject') => api.post(`/alpha-agent/proposals/${id}/decision`, { action })
 export const getAlphaActivity      = (limit = 100, sinceId = 0) => api.get(`/alpha-agent/activity?limit=${limit}&since_id=${sinceId}`)
 export const getAlphaMarketStatus  = () => api.get('/alpha-agent/market/status')
+
+// Phase 1 — Market Intelligence
+export const getAlphaMarketNarrative  = () => api.get('/alpha-agent/market-narrative')
+export const getAlphaCounterfactuals  = (limit = 50) => api.get(`/alpha-agent/counterfactuals?limit=${limit}`)
+export const getAlphaPatternMemory    = () => api.get('/alpha-agent/pattern-memory')
+
+// Phase 2 — Predictions & Accountability
+export const getAlphaPredictions      = (limit = 50) => api.get(`/alpha-agent/predictions?limit=${limit}`)
+
+// Phase 3 — Calibration & Learning
+export const getAlphaCalibration      = (status = '') => api.get(`/alpha-agent/calibration${status ? `?status=${status}` : ''}`)
+export const runAlphaCalibration      = () => api.post('/alpha-agent/calibration/run')
+export const applyCalibration         = (id: number) => api.post(`/alpha-agent/calibration/${id}/apply`)
+export const rejectCalibration        = (id: number) => api.post(`/alpha-agent/calibration/${id}/reject`)
+export const runPredictionAudit       = () => api.post('/alpha-agent/prediction-audit/run')
+export const getCounterfactualSummary = () => api.get('/alpha-agent/counterfactuals/summary')
+export const resolveCounterfactuals   = () => api.post('/alpha-agent/counterfactuals/resolve')
+
+// Phase 4 — Performance Dashboard
+export const getAlphaPerformance      = () => api.get('/alpha-agent/performance')
+
 export const BASE_URL              = '/api'
